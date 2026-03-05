@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="App de finanças compartilhado para casais — controle de gastos em tempo real">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>FinCasal — Finanças do Casal</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- ===== LOGIN SCREEN ===== -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-card">
+            <span class="login-icon">🔐</span>
+            <h2 class="login-title">FinCasal</h2>
+            <p class="login-subtitle">Digite a senha para acessar</p>
+            <form id="formLogin" autocomplete="off">
+                <input type="password" id="inputSenha" class="input-senha" placeholder="Senha..." autofocus required>
+                <div id="loginError" class="login-error hidden">❌ Senha incorreta</div>
+                <button type="submit" class="btn-login">Entrar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== ALERT BAR ===== -->
+    <div id="alertBar" class="alert-bar hidden">
+        <span id="alertIcon">⚠️</span>
+        <span id="alertMsg">Gastos comuns ultrapassaram o limite!</span>
+        <button id="alertClose" onclick="document.getElementById('alertBar').classList.add('hidden')"
+            aria-label="Fechar alerta">&times;</button>
+    </div>
+
+    <!-- ===== HEADER ===== -->
+    <header class="app-header">
+        <div class="header-content">
+            <div class="logo">
+                <span class="logo-icon">💰</span>
+                <div>
+                    <h1>FinCasal</h1>
+                    <span class="subtitle">Finanças do Casal</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="btnThemeToggle" class="btn-icon" aria-label="Alternar tema" title="Alternar Claro/Escuro">
+                    <span class="icon-sun">☀️</span>
+                    <span class="icon-moon">🌙</span>
+                </button>
+                <button id="btnSync" class="btn-icon" aria-label="Sincronizar dados" title="Sincronizar com n8n">
+                    🔄
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="app-main">
+
+        <!-- ===== DASHBOARD ===== -->
+        <section id="secDashboard" class="section-dashboard">
+            <div class="dashboard-grid">
+                <!-- Card Eu -->
+                <div class="dash-card card-eu" id="cardEu">
+                    <div class="card-header">
+                        <span class="card-avatar">👤</span>
+                        <span class="card-label">Eu</span>
+                    </div>
+                    <div class="card-value" id="saldoEu">R$ 0,00</div>
+                    <div class="card-detail">
+                        <span class="detail-receita">+<span id="receitaEu">0,00</span></span>
+                        <span class="detail-despesa">-<span id="despesaEu">0,00</span></span>
+                    </div>
+                    <div class="card-contrib">
+                        <span class="contrib-label">Contribuição fixa:</span>
+                        <span class="contrib-value" id="contribEu">0%</span>
+                    </div>
+                </div>
+
+                <!-- Card Esposa -->
+                <div class="dash-card card-esposa" id="cardEsposa">
+                    <div class="card-header">
+                        <span class="card-avatar">👩</span>
+                        <span class="card-label">Esposa</span>
+                    </div>
+                    <div class="card-value" id="saldoEsposa">R$ 0,00</div>
+                    <div class="card-detail">
+                        <span class="detail-receita">+<span id="receitaEsposa">0,00</span></span>
+                        <span class="detail-despesa">-<span id="despesaEsposa">0,00</span></span>
+                    </div>
+                    <div class="card-contrib">
+                        <span class="contrib-label">Contribuição fixa:</span>
+                        <span class="contrib-value" id="contribEsposa">0%</span>
+                    </div>
+                </div>
+
+                <!-- Card Total -->
+                <div class="dash-card card-total" id="cardTotal">
+                    <div class="card-header">
+                        <span class="card-avatar">🏠</span>
+                        <span class="card-label">Total da Casa</span>
+                    </div>
+                    <div class="card-value" id="saldoTotal">R$ 0,00</div>
+                    <div class="card-detail">
+                        <span class="detail-receita">+<span id="receitaTotal">0,00</span></span>
+                        <span class="detail-despesa">-<span id="despesaTotal">0,00</span></span>
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">Gastos Comuns</span>
+                            <span class="meta-value" id="gastoComum">R$ 0,00</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Limite Comum</span>
+                            <span class="meta-value" id="limiteComum">R$ 3.000,00</span>
+                        </div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressComum"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== MONTH NAVIGATION ===== -->
+        <section class="month-nav">
+            <button id="btnPrevMonth" class="btn-month" aria-label="Mês anterior">◀</button>
+            <span id="mesAtual" class="month-label">Março 2026</span>
+            <button id="btnNextMonth" class="btn-month" aria-label="Próximo mês">▶</button>
+        </section>
+
+        <!-- ===== QUICK ENTRY ===== -->
+        <section id="secEntry" class="section-entry">
+            <h2 class="section-title">
+                <span>⚡</span> Lançamento Rápido
+            </h2>
+
+            <form id="formEntry" autocomplete="off">
+                <!-- Tipo: Receita ou Despesa -->
+                <div class="toggle-tipo">
+                    <button type="button" class="btn-tipo active" data-tipo="despesa" id="btnTipoDespesa">💸
+                        Despesa</button>
+                    <button type="button" class="btn-tipo" data-tipo="receita" id="btnTipoReceita">💰 Receita</button>
+                </div>
+
+                <!-- Quem gastou -->
+                <div class="field-group">
+                    <label class="field-label">Quem?</label>
+                    <div class="btn-group-quem">
+                        <button type="button" class="btn-quem active" data-quem="Eu" id="btnQuemEu">👤 Eu</button>
+                        <button type="button" class="btn-quem" data-quem="Esposa" id="btnQuemEsposa">👩 Esposa</button>
+                        <button type="button" class="btn-quem" data-quem="Comum" id="btnQuemComum">🏠 Comum</button>
+                    </div>
+                </div>
+
+                <!-- Valor -->
+                <div class="field-group">
+                    <label class="field-label" for="inputValor">Valor (R$)</label>
+                    <input type="text" id="inputValor" class="input-valor" placeholder="0,00" inputmode="decimal"
+                        required>
+                </div>
+
+                <!-- Descrição -->
+                <div class="field-group">
+                    <label class="field-label" for="inputDesc">Descrição</label>
+                    <input type="text" id="inputDesc" class="input-text" placeholder="Ex: Mercado, Aluguel, Salário..."
+                        required>
+                </div>
+
+                <!-- Categorias rápidas -->
+                <div class="field-group">
+                    <label class="field-label">Categoria Rápida</label>
+                    <div class="quick-categories">
+                        <button type="button" class="btn-cat" data-cat="Mercado" data-sub="Alimentação">🛒
+                            Mercado</button>
+                        <button type="button" class="btn-cat" data-cat="iFood" data-sub="Alimentação">🍔 iFood</button>
+                        <button type="button" class="btn-cat" data-cat="Lazer" data-sub="Lazer">🎮 Lazer</button>
+                        <button type="button" class="btn-cat" data-cat="Contas Fixas" data-sub="Moradia">📄
+                            Contas</button>
+                        <button type="button" class="btn-cat" data-cat="Pet" data-sub="Pet">🐾 Pet</button>
+                        <button type="button" class="btn-cat" data-cat="Transporte" data-sub="Transporte">🚗
+                            Transporte</button>
+                        <button type="button" class="btn-cat" data-cat="Saúde" data-sub="Saúde">💊 Saúde</button>
+                        <button type="button" class="btn-cat" data-cat="Padaria" data-sub="Alimentação">🥐
+                            Padaria</button>
+                        <button type="button" class="btn-cat" data-cat="Assinaturas" data-sub="Assinaturas">📺
+                            Streaming</button>
+                        <button type="button" class="btn-cat" data-cat="Vestuário" data-sub="Vestuário">👕
+                            Roupa</button>
+                        <button type="button" class="btn-cat" data-cat="Educação" data-sub="Educação">📚
+                            Educação</button>
+                        <button type="button" class="btn-cat" data-cat="Outro" data-sub="Outros">📌 Outro</button>
+                    </div>
+                </div>
+
+                <!-- Destino (aba do Google Sheets) -->
+                <div class="field-group">
+                    <label class="field-label" for="selectDestino">Destino (Aba)</label>
+                    <select id="selectDestino" class="input-select">
+                        <option value="Gastos Variaveis">Gastos Variáveis</option>
+                        <option value="Contas Fixas">Contas Fixas</option>
+                        <option value="Cartoes">Cartões</option>
+                        <option value="Gastos Financiamentos">Financiamentos</option>
+                        <option value="Conta Corrente">Conta Corrente (Pix/Débito)</option>
+                        <option value="Receitas">Receitas</option>
+                    </select>
+                </div>
+
+                <!-- Grupo de Categoria -->
+                <div class="field-group">
+                    <label class="field-label" for="selectCategoria">Grupo</label>
+                    <select id="selectCategoria" class="input-select">
+                        <option value="Essenciais">Essenciais</option>
+                        <option value="Estilo de Vida">Estilo de Vida</option>
+                        <option value="Investimentos">Investimentos</option>
+                    </select>
+                </div>
+
+                <!-- Data -->
+                <div class="field-row">
+                    <div class="field-group field-half">
+                        <label class="field-label" for="inputData">Data</label>
+                        <input type="date" id="inputData" class="input-text">
+                    </div>
+                    <div class="field-group field-half">
+                        <label class="field-label" for="inputCartao">Cartão (se aplicável)</label>
+                        <input type="text" id="inputCartao" class="input-text" placeholder="Nome do cartão">
+                    </div>
+                </div>
+
+                <!-- Botões -->
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" id="btnSalvar">
+                        <span class="btn-text">💾 Salvar Lançamento</span>
+                    </button>
+                    <button type="button" class="btn-secondary" id="btnEnviarN8N">
+                        <span class="btn-text">🔗 Enviar para n8n</span>
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <!-- ===== FILTERS ===== -->
+        <section id="secHistorico" class="section-historico">
+            <h2 class="section-title">
+                <span>📊</span> Histórico de Lançamentos
+            </h2>
+
+            <div class="filter-bar">
+                <button class="btn-filter active" data-filter="Todos" id="filterTodos">Todos</button>
+                <button class="btn-filter" data-filter="Eu" id="filterEu">👤 Eu</button>
+                <button class="btn-filter" data-filter="Esposa" id="filterEsposa">👩 Esposa</button>
+                <button class="btn-filter" data-filter="Comum" id="filterComum">🏠 Comum</button>
+            </div>
+
+            <!-- Tabela -->
+            <div class="table-container">
+                <table id="tabelaHistorico">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Descrição</th>
+                            <th>Quem</th>
+                            <th>Valor</th>
+                            <th>Categoria</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyHistorico">
+                        <!-- Rendered by JS -->
+                    </tbody>
+                </table>
+                <div id="emptyState" class="empty-state">
+                    <span class="empty-icon">📭</span>
+                    <p>Nenhum lançamento ainda.</p>
+                    <p class="empty-hint">Use o formulário acima para adicionar!</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== CONFIG (Limite) ===== -->
+        <section id="secConfig" class="section-config">
+            <h2 class="section-title"><span>⚙️</span> Configurações</h2>
+            <div class="config-grid">
+                <div class="config-item">
+                    <label class="field-label" for="inputLimite">Limite de Gastos Comuns (R$)</label>
+                    <input type="text" id="inputLimite" class="input-text" value="3000,00" inputmode="decimal">
+                    <button class="btn-small" id="btnSalvarLimite">Salvar Limite</button>
+                </div>
+                <div class="config-item">
+                    <label class="field-label" for="inputWebhook">URL do Webhook (n8n)</label>
+                    <input type="url" id="inputWebhook" class="input-text"
+                        placeholder="https://seu-n8n.com/webhook/...">
+                    <button class="btn-small" id="btnSalvarWebhook">Salvar URL</button>
+                </div>
+                <div class="config-item">
+                    <label class="field-label">Dados</label>
+                    <div class="config-actions">
+                        <button class="btn-small btn-danger" id="btnLimparDados">🗑️ Limpar Todos os Dados</button>
+                        <button class="btn-small" id="btnExportarDados">📤 Exportar JSON</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="app-footer">
+        <p>FinCasal &copy; 2026 — Feito com ❤️ para o casal</p>
+    </footer>
+
+    <!-- ===== TOAST ===== -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
