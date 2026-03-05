@@ -308,9 +308,10 @@
                 </div>
                 <div class="cc-fatura">
                     <div class="cc-fat-info"><span>Fatura</span><strong>${fmt(emAberto)}</strong></div>
-                    <div style="display:flex;gap:8px">
-                        <button class="btn-sm" style="background:var(--bg3);color:var(--text)" onclick="FC.abrirFatura('${c.nome}')">🧾 Ver fatura</button>
-                        <button class="btn-sm" onclick="FC.addDespesaCartao('${c.nome}')">➕ Lançar</button>
+                    <div style="display:flex;gap:6px">
+                        <button class="btn-sm" style="background:var(--bg3);color:var(--text);padding:6px 10px" onclick="FC.abrirFatura('${c.nome}')" title="Ver Detalhes">🧾</button>
+                        <button class="btn-sm" style="background:var(--bg3);color:var(--text);padding:6px 10px" onclick="FC.reajusteRapido('${c.nome}', ${emAberto})" title="Reajustar Fatura">⚖️ Reajuste</button>
+                        <button class="btn-sm" style="padding:6px 10px" onclick="FC.addDespesaCartao('${c.nome}')" title="Lançar Despesa">➕ Lançar</button>
                     </div>
                 </div>
             </div>`;
@@ -388,12 +389,47 @@
         saveAll();
         FC.abrirFatura(cartaoFaturaAtual);
         refreshCartoes();
+        refreshDashboard();
         toast('✅ Ajuste adicionado');
     };
 
+    FC.reajusteRapido = (nome, currentTotal) => {
+        const input = prompt(`O valor atual da fatura no app é ${fmt(currentTotal)}.\nQual o valor exato da fatura no seu banco?`);
+        if (!input) return;
+        const bancoReal = parseValor(input);
+        if (bancoReal <= 0) return;
+
+        const diff = bancoReal - currentTotal;
+        if (diff === 0) { toast('⚠️ Valores já estão iguais'); return; }
+
+        const yearBase = currentYear;
+        const monthBase = String(currentMonth + 1).padStart(2, '0');
+        const data = `${yearBase}-${monthBase}-01`;
+
+        transacoes.push({
+            id: uid(),
+            descricao: diff > 0 ? 'Encargos / Reajuste (Fatura)' : 'Estorno / Desconto (Fatura)',
+            valor: Math.abs(diff),
+            data,
+            tipo: diff > 0 ? 'despesa' : 'receita',
+            quem: 'Comum',
+            categoria: 'Essenciais',
+            subcategoria: 'Ajuste Fatura',
+            destino: 'Cartoes',
+            pendente: false,
+            cartao: nome,
+            recorrencia: 'unico'
+        });
+
+        saveAll();
+        refreshCartoes();
+        refreshDashboard();
+        toast('✅ Fatura reajustada!');
+    };
+
     FC.pagarFatura = () => {
-        if (!confirm(`Deseja marcar a fatura do cartão ${cartaoFaturaAtual} como paga?`)) return;
-        toast('✅ Fatura paga com sucesso!');
+        if (!confirm(`Atenção: Ao clicar em OK, o registro será mantido. Você pode conferir os gastos como pagos a qualquer momento.`)) return;
+        toast('✅ Pagamento registrado visualmente!');
         FC.closeModal('modalFatura');
     };
 
