@@ -420,6 +420,38 @@
             </div>
         </div>
 
+        <!-- ========== MODAL: Fatura do Cartão ========== -->
+        <div id="modalFatura" class="modal hidden">
+            <div class="modal-content modal-large">
+                <h3 id="mfTitle">🧾 Fatura do Cartão</h3>
+
+                <div class="fatura-total-box">
+                    <span>Total da Fatura</span>
+                    <strong id="mfTotal">R$ 0,00</strong>
+                </div>
+
+                <div id="mfList" class="fatura-list"></div>
+
+                <div class="fatura-adjust"
+                    style="margin-top:20px; padding-top:15px; border-top:1px solid var(--border);">
+                    <label style="font-size:0.8rem;color:var(--text3);display:block;margin-bottom:8px">Adicionar
+                        encargo/reajuste à fatura</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="mfAjusteDesc" placeholder="Descrição (ex: IOF)" class="form-input-flat"
+                            style="flex:2">
+                        <input type="text" id="mfAjusteValor" placeholder="R$ 0,00" class="form-input-flat"
+                            style="flex:1" inputmode="decimal">
+                        <button class="btn-confirm" style="padding: 0 15px;" onclick="FC.addAjusteFatura()">+</button>
+                    </div>
+                </div>
+
+                <div class="modal-actions" style="margin-top:20px;">
+                    <button class="btn-cancel" onclick="FC.closeModal('modalFatura')">Fechar</button>
+                    <button class="btn-confirm" id="btnPagarFatura" onclick="FC.pagarFatura()">Pagar Fatura</button>
+                </div>
+            </div>
+        </div>
+
     </div><!-- end app-container -->
 
     <!-- ===== BOTTOM NAV ===== -->

@@ -1545,6 +1545,75 @@ select {
     display: none !important;
 }
 
+/* ===== FATURA MODAL ===== */
+.fatura-total-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg3);
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 16px;
+}
+
+.fatura-total-box span {
+    font-size: .85rem;
+    color: var(--text2);
+    font-weight: 600;
+}
+
+.fatura-total-box strong {
+    font-size: 1.2rem;
+    color: var(--text);
+}
+
+.fatura-list {
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+}
+
+.fatura-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.fatura-item:last-child {
+    border-bottom: none;
+}
+
+.fatura-info {
+    flex: 1;
+}
+
+.fatura-desc {
+    font-weight: 600;
+    font-size: .85rem;
+    display: block;
+}
+
+.fatura-date {
+    font-size: .7rem;
+    color: var(--text3);
+}
+
+.fatura-val {
+    font-weight: 700;
+    font-size: .9rem;
+    color: var(--text);
+}
+
+.fatura-actions button {
+    margin-left: 8px;
+    font-size: 1rem;
+    color: var(--red);
+}
+
 /* ===== MOBILE ===== */
 @media (max-width: 480px) {
     .page-header {

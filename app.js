@@ -255,7 +255,10 @@
     function calcCartaoTotal() {
         let total = 0;
         cartoes.forEach(c => {
-            const gastos = transacoes.filter(t => t.cartao === c.nome && t.tipo === 'despesa').reduce((s, t) => s + t.valor, 0);
+            const gastos = transacoes.filter(t => {
+                const d = new Date(t.data + 'T12:00:00');
+                return t.cartao === c.nome && t.tipo === 'despesa' && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+            }).reduce((s, t) => s + t.valor, 0);
             total += gastos;
         });
         return total;
@@ -305,7 +308,10 @@
                 </div>
                 <div class="cc-fatura">
                     <div class="cc-fat-info"><span>Fatura</span><strong>${fmt(emAberto)}</strong></div>
-                    <span class="cc-fat-badge ${isFechada ? 'fechada' : 'aberta'}">${isFechada ? '🔒 Fechada' : '🔓 Aberta'}</span>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn-sm" style="background:var(--bg3);color:var(--text)" onclick="FC.abrirFatura('${c.nome}')">🧾 Ver fatura</button>
+                        <button class="btn-sm" onclick="FC.addDespesaCartao('${c.nome}')">➕ Lançar</button>
+                    </div>
                 </div>
             </div>`;
         }).join('');
@@ -315,6 +321,89 @@
         if (!confirm('Excluir cartão?')) return;
         cartoes = cartoes.filter(c => c.id !== id);
         saveAll(); refreshCartoes(); toast('🗑️ Cartão excluído');
+    };
+
+    let cartaoFaturaAtual = null;
+
+    FC.abrirFatura = nome => {
+        cartaoFaturaAtual = nome;
+        const txMonth = transacoes.filter(t => {
+            const d = new Date(t.data + 'T12:00:00');
+            return t.cartao === nome && t.tipo === 'despesa' && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+        }).sort((a, b) => new Date(b.data) - new Date(a.data));
+
+        const total = txMonth.reduce((s, t) => s + t.valor, 0);
+
+        $('mfTitle').textContent = `Fatura: ${nome}`;
+        $('mfTotal').textContent = fmt(total);
+
+        const list = $('mfList');
+        if (txMonth.length === 0) {
+            list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Nenhuma despesa nesta fatura</div>';
+        } else {
+            list.innerHTML = txMonth.map(t => {
+                const d = new Date(t.data + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+                return `<div class="fatura-item">
+                    <div class="fatura-info">
+                        <span class="fatura-desc">${t.descricao}</span>
+                        <span class="fatura-date">${d} • ${t.quem}</span>
+                    </div>
+                    <span class="fatura-val">${fmt(t.valor)}</span>
+                    <div class="fatura-actions">
+                        <button onclick="FC.deleteEntryFatura('${t.id}')">🗑️</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        $('mfAjusteDesc').value = '';
+        $('mfAjusteValor').value = '';
+        $('modalFatura').classList.remove('hidden');
+    };
+
+    FC.deleteEntryFatura = id => {
+        if (!confirm('Excluir lançamento da fatura?')) return;
+        transacoes = transacoes.filter(x => x.id !== id);
+        saveAll();
+        FC.abrirFatura(cartaoFaturaAtual);
+        refreshCartoes();
+        toast('🗑️ Excluído');
+    };
+
+    FC.addAjusteFatura = () => {
+        const desc = $('mfAjusteDesc').value.trim();
+        const valor = parseValor($('mfAjusteValor').value);
+        if (!desc || !valor) { toast('⚠️ Preencha descrição e valor'); return; }
+
+        const yearBase = currentYear;
+        const monthBase = String(currentMonth + 1).padStart(2, '0');
+        const data = `${yearBase}-${monthBase}-01`;
+
+        transacoes.push({
+            id: uid(), descricao: desc, valor, data, tipo: 'despesa', quem: 'Comum',
+            categoria: 'Essenciais', subcategoria: 'Ajuste Fatura', destino: 'Cartoes',
+            pendente: false, cartao: cartaoFaturaAtual, recorrencia: 'unico'
+        });
+
+        saveAll();
+        FC.abrirFatura(cartaoFaturaAtual);
+        refreshCartoes();
+        toast('✅ Ajuste adicionado');
+    };
+
+    FC.pagarFatura = () => {
+        if (!confirm(`Deseja marcar a fatura do cartão ${cartaoFaturaAtual} como paga?`)) return;
+        toast('✅ Fatura paga com sucesso!');
+        FC.closeModal('modalFatura');
+    };
+
+    FC.addDespesaCartao = nome => {
+        FC.goTo('pageNovo');
+        setTimeout(() => {
+            $('fDestino').value = 'Cartoes';
+            toggleCartaoFields();
+            $('fCartao').value = nome;
+        }, 50);
     };
 
     FC.closeModal = id => $(id).classList.add('hidden');
