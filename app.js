@@ -780,6 +780,30 @@
         // Config: sub cat filter
         $('cfgCatFilter').addEventListener('change', refreshSubcatList);
 
+        // Config: import
+        $('btnImport').addEventListener('click', () => $('cfgImportFile').click());
+        $('cfgImportFile').addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = ev => {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    if (data.transacoes) transacoes = data.transacoes;
+                    if (data.cartoes) cartoes = data.cartoes;
+                    if (data.categorias) categorias = data.categorias;
+                    if (data.config) config = Object.assign(config, data.config);
+                    saveAll();
+                    refreshConfig();
+                    FC.goTo('pageHome');
+                    toast('✅ Dados importados com sucesso!');
+                } catch (err) {
+                    toast('❌ Erro ao importar arquivo JSON');
+                }
+            };
+            reader.readAsText(file);
+        });
+
         // Config: export
         $('btnExport').addEventListener('click', () => {
             const data = { transacoes, cartoes, categorias, config };
