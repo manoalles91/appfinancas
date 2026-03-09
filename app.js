@@ -60,11 +60,17 @@
     };
 
     async function saveAll() {
+        // Local fallback
+        save('fc_transacoes', transacoes);
+        save('fc_cartoes', cartoes);
+        save('fc_categorias', categorias);
+        save('fc_config', config);
+
         // Sync via Supabase Upsert Background
-        if (transacoes.length > 0) supabase.from('transacoes').upsert(transacoes).then();
-        if (cartoes.length > 0) supabase.from('cartoes').upsert(cartoes).then();
-        supabase.from('categorias').upsert({ id: 'unico', dados: categorias }).then();
-        supabase.from('config').upsert({ id: 'unico', limite: config.limite, webhookUrl: config.webhookUrl }).then();
+        if (transacoes.length > 0) supabase.from('transacoes').upsert(transacoes).then(r => r.error && console.error('Supabase TX Err:', r.error));
+        if (cartoes.length > 0) supabase.from('cartoes').upsert(cartoes).then(r => r.error && console.error('Supabase Cartoes Err:', r.error));
+        supabase.from('categorias').upsert({ id: 'unico', dados: categorias }).then(r => r.error && console.error('Supabase Cat Err:', r.error));
+        supabase.from('config').upsert({ id: 'unico', limite: config.limite, webhookUrl: config.webhookUrl }).then(r => r.error && console.error('Supabase Config Err:', r.error));
     }
 
     function getMonthTransactions(m, y) {
@@ -959,6 +965,16 @@
     }
 
     async function initCloud() {
+        // 1. Tentar pegar do localStorage primeiro para fallback
+        const localTx = load('fc_transacoes');
+        if (localTx && localTx.length > 0) transacoes = localTx;
+        const localCx = load('fc_cartoes');
+        if (localCx && localCx.length > 0) cartoes = localCx;
+        const localCat = load('fc_categorias');
+        if (localCat) categorias = localCat;
+        const localConf = load('fc_config');
+        if (localConf) config = Object.assign(config, localConf);
+
         try {
             if ($('novoTitle')) $('novoTitle').textContent = 'Carregando Dados... ⏳';
             const [rT, rC, rCat, rConf] = await Promise.all([
@@ -967,12 +983,24 @@
                 supabase.from('categorias').select('dados').eq('id', 'unico').single(),
                 supabase.from('config').select('*').eq('id', 'unico').single()
             ]);
+
+            // Só substitui se o Supabase RETORNAR dados (não sobrescreve o local com vazio se a nuvem falhou)
             if (rT.data && rT.data.length > 0) transacoes = rT.data;
             if (rC.data && rC.data.length > 0) cartoes = rC.data;
-            if (rCat.data) categorias = rCat.data.dados;
+            if (rCat.data && rCat.data.dados) categorias = rCat.data.dados;
             if (rConf.data) { config.limite = rConf.data.limite; config.webhookUrl = rConf.data.webhookurl || rConf.data.webhookUrl || ''; }
+
+            // Atualiza o local com os dados frescos da nuvem
+            save('fc_transacoes', transacoes);
+            save('fc_cartoes', cartoes);
+            save('fc_categorias', categorias);
+            save('fc_config', config);
+
             if ($('novoTitle')) $('novoTitle').textContent = 'Nova Despesa';
-        } catch (e) { console.log('Erro Supabase', e); }
+        } catch (e) {
+            console.log('Erro Supabase, mantendo dados locais', e);
+            if ($('novoTitle')) $('novoTitle').textContent = 'Modo Offline (Erro Nuvem)';
+        }
 
         init();
         fillCategorias();
