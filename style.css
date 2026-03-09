@@ -1726,6 +1726,11 @@ select {
     /* Light Purple */
 }
 
+.progress-fill.investimentos {
+    background: #81c784;
+    /* Light Green (for growth) */
+}
+
 /* List Tabs */
 .list-tabs {
     display: flex;

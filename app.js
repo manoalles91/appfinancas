@@ -135,25 +135,28 @@
         // 4. Saldo Livre Projetado
         const saldoLivre = receitasTotal - despesasTotal;
 
-        // 5. Categorias: Essenciais e Estilo de Vida
-        let essencialGasto = 0, estiloGasto = 0;
-        let essencialPrev = 0, estiloPrev = 0; // Idealmente pegaria da aba de configs, mas basearemos no histórico ou 0 provisório
+        // 5. Categorias: Essenciais, Estilo de Vida e Investimentos
+        let essencialGasto = 0, estiloGasto = 0, investGasto = 0;
 
         txs.filter(t => t.tipo === 'despesa').forEach(t => {
             if (categorias['Essenciais']?.includes(t.categoria)) {
                 essencialGasto += t.valor;
             } else if (categorias['Estilo de Vida']?.includes(t.categoria)) {
                 estiloGasto += t.valor;
+            } else if (categorias['Investimentos']?.includes(t.categoria)) {
+                investGasto += t.valor;
             }
         });
 
         // Definindo "Teto" provisório baseado na renda para simular o progresso do gráfico
-        // Exemplo: 50% da receita para Essenciais, 30% para Estilo de Vida
+        // Exemplo: 50% Essenciais, 30% Estilo de Vida, 20% Investimentos
         const tetoEssenciais = receitasTotal > 0 ? receitasTotal * 0.50 : 2000;
         const tetoEstilo = receitasTotal > 0 ? receitasTotal * 0.30 : 1000;
+        const tetoInvest = receitasTotal > 0 ? receitasTotal * 0.20 : 500;
 
         const percEssenciais = tetoEssenciais > 0 ? Math.min((essencialGasto / tetoEssenciais) * 100, 100) : 0;
         const percEstilo = tetoEstilo > 0 ? Math.min((estiloGasto / tetoEstilo) * 100, 100) : 0;
+        const percInvest = tetoInvest > 0 ? Math.min((investGasto / tetoInvest) * 100, 100) : 0;
 
         // Atualizar HTML - Topological
         $('dashReceitas').textContent = fmt(receitasPagas);
@@ -165,6 +168,12 @@
         $('valEstiloVida').textContent = `${fmt(estiloGasto)} / ${fmt(tetoEstilo)}`;
         $('lblEstiloVida').textContent = `${percEstilo.toFixed(0)}%`;
         $('barEstiloVida').style.width = `${percEstilo}%`;
+
+        if ($('valInvestimentos')) {
+            $('valInvestimentos').textContent = `${fmt(investGasto)} / ${fmt(tetoInvest)}`;
+            $('lblInvestimentos').textContent = `${percInvest.toFixed(0)}%`;
+            $('barInvestimentos').style.width = `${percInvest}%`;
+        }
 
         $('dashSaldoLivre').textContent = fmt(saldoLivre);
         if (saldoLivre < 0) {
