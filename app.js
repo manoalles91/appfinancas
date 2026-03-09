@@ -21,16 +21,20 @@
         });
     }
 
-    // ===== STORAGE =====
-    const KEYS = { data: 'fc_data', config: 'fc_config', cartoes: 'fc_cartoes', cats: 'fc_cats', theme: 'fc_theme' };
+    // ===== SUPABASE CONFIG =====
+    const supabaseUrl = 'https://nwdzrntbmiwaauauwgpga.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53ZHpybnRibWl3YWF1YXV3cGdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNjI2OTksImV4cCI6MjA4ODYzODY5OX0.7Mr3jd_Rz_Cp-ADi54z26B4ESxItsyQ05DIJLEqjfNc';
+    const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    const KEYS = { theme: 'fc_theme' };
     const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
     const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
     // ===== STATE =====
-    let transacoes = load(KEYS.data) || [];
-    let cartoes = load(KEYS.cartoes) || [];
-    let config = load(KEYS.config) || { limite: 3000, webhookUrl: '' };
-    let categorias = load(KEYS.cats) || {
+    let transacoes = [];
+    let cartoes = [];
+    let config = { limite: 3000, webhookUrl: '' };
+    let categorias = {
         'Essenciais': ['Moradia', 'Luz', 'Água', 'Internet', 'Alimentação', 'Transporte', 'Saúde'],
         'Estilo de Vida': ['Lazer', 'Streaming', 'Vestuário', 'Pet', 'Educação', 'Doações/Presentes', 'Padaria', 'iFood'],
         'Investimentos': ['Poupança', 'Renda Fixa', 'Ações', 'Crypto', 'Previdência']
@@ -55,11 +59,12 @@
         el.value = v.replace('.', ',');
     };
 
-    function saveAll() {
-        save(KEYS.data, transacoes);
-        save(KEYS.cartoes, cartoes);
-        save(KEYS.config, config);
-        save(KEYS.cats, categorias);
+    async function saveAll() {
+        // Sync via Supabase Upsert Background
+        if (transacoes.length > 0) supabase.from('transacoes').upsert(transacoes).then();
+        if (cartoes.length > 0) supabase.from('cartoes').upsert(cartoes).then();
+        supabase.from('categorias').upsert({ id: 'unico', dados: categorias }).then();
+        supabase.from('config').upsert({ id: 'unico', limite: config.limite, webhookUrl: config.webhookUrl }).then();
     }
 
     function getMonthTransactions(m, y) {
@@ -100,72 +105,112 @@
         if ($('btnTheme2')) $('btnTheme2').textContent = icon;
     }
 
+    // ===== TAB STATE =====
+    let currentTabList = 'todas'; // todas | pagas | pendentes
+
+    FC.filterByTab = (tabStr) => {
+        currentTabList = tabStr;
+        $$('.list-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabStr));
+        refreshDashboard();
+    };
+
     // ===== DASHBOARD =====
     function refreshDashboard() {
+        generateRecurring(new Date(currentYear, currentMonth + 1, 0));
         const txs = getMonthTransactions(currentMonth, currentYear);
         $('lblMonth').textContent = `${MESES[currentMonth]} ${currentYear}`;
 
-        // Calc
-        let recEu = 0, recEsp = 0, recCom = 0, despEu = 0, despEsp = 0, despCom = 0;
-        let recPrev = 0, despPrev = 0, pending = 0, pendTotal = 0;
-        txs.forEach(t => {
-            const v = t.valor;
-            if (t.tipo === 'receita') {
-                recPrev += v;
-                if (!t.pendente) { if (t.quem === 'Eu') recEu += v; else if (t.quem === 'Esposa') recEsp += v; else { recEu += v / 2; recEsp += v / 2; recCom += v; } }
-            } else {
-                despPrev += v;
-                if (!t.pendente) { if (t.quem === 'Eu') despEu += v; else if (t.quem === 'Esposa') despEsp += v; else { despEu += v / 2; despEsp += v / 2; despCom += v; } }
-                if (t.pendente) { pending++; pendTotal += v; }
+        // 1. Receitas do Mês (Pagas)
+        const receitasPagas = txs.filter(t => t.tipo === 'receita' && !t.pendente)
+            .reduce((acc, current) => acc + current.valor, 0);
+
+        // 2. Receitas Totais Projetadas (Pagas + Pendentes)
+        const receitasTotal = txs.filter(t => t.tipo === 'receita')
+            .reduce((acc, current) => acc + current.valor, 0);
+
+        // 3. Despesas Totais Projetadas (Pagas + Pendentes)
+        const despesasTotal = txs.filter(t => t.tipo === 'despesa')
+            .reduce((acc, current) => acc + current.valor, 0);
+
+        // 4. Saldo Livre Projetado
+        const saldoLivre = receitasTotal - despesasTotal;
+
+        // 5. Categorias: Essenciais e Estilo de Vida
+        let essencialGasto = 0, estiloGasto = 0;
+        let essencialPrev = 0, estiloPrev = 0; // Idealmente pegaria da aba de configs, mas basearemos no histórico ou 0 provisório
+
+        txs.filter(t => t.tipo === 'despesa').forEach(t => {
+            if (categorias['Essenciais']?.includes(t.categoria)) {
+                essencialGasto += t.valor;
+            } else if (categorias['Estilo de Vida']?.includes(t.categoria)) {
+                estiloGasto += t.valor;
             }
         });
 
-        const recAtual = recEu + recEsp + recCom;
-        const despAtual = despEu + despEsp + despCom;
-        const saldoEu = recEu - despEu;
-        const saldoEsp = recEsp - despEsp;
-        const saldoTotal = saldoEu + saldoEsp;
+        // Definindo "Teto" provisório baseado na renda para simular o progresso do gráfico
+        // Exemplo: 50% da receita para Essenciais, 30% para Estilo de Vida
+        const tetoEssenciais = receitasTotal > 0 ? receitasTotal * 0.50 : 2000;
+        const tetoEstilo = receitasTotal > 0 ? receitasTotal * 0.30 : 1000;
 
-        $('saldoAtual').textContent = fmt(saldoTotal);
-        $('saldoPrevisto').textContent = fmt(recPrev - despPrev);
-        $('saldoInicial').textContent = fmt(0);
-        $('ovReceitaAtual').textContent = fmt(recAtual);
-        $('ovReceitaPrev').textContent = fmt(recPrev);
-        $('ovDespesaAtual').textContent = fmt(despAtual);
-        $('ovDespesaPrev').textContent = fmt(despPrev);
+        const percEssenciais = tetoEssenciais > 0 ? Math.min((essencialGasto / tetoEssenciais) * 100, 100) : 0;
+        const percEstilo = tetoEstilo > 0 ? Math.min((estiloGasto / tetoEstilo) * 100, 100) : 0;
 
-        // Cartões
-        const cartaoTotal = calcCartaoTotal();
-        $('ovCartoes').textContent = fmt(cartaoTotal);
-        $('ovCartoesPrev').textContent = fmt(cartaoTotal);
+        // Atualizar HTML - Topological
+        $('dashReceitas').textContent = fmt(receitasPagas);
 
-        // Casal
-        $('casalEu').textContent = fmt(saldoEu);
-        $('casalEsposa').textContent = fmt(saldoEsp);
-        $('casalTotal').textContent = fmt(saldoTotal);
-        const totalFixa = txs.filter(t => t.tipo === 'despesa' && t.destino === 'Contas Fixas').reduce((s, t) => s + t.valor, 0);
-        const euFixa = txs.filter(t => t.tipo === 'despesa' && t.destino === 'Contas Fixas' && t.quem === 'Eu').reduce((s, t) => s + t.valor, 0);
-        $('contribEu').textContent = totalFixa ? Math.round(euFixa / totalFixa * 100) + '%' : '0%';
-        $('contribEsposa').textContent = totalFixa ? Math.round((totalFixa - euFixa) / totalFixa * 100) + '%' : '0%';
+        $('valEssenciais').textContent = `${fmt(essencialGasto)} / ${fmt(tetoEssenciais)}`;
+        $('lblEssenciais').textContent = `${percEssenciais.toFixed(0)}%`;
+        $('barEssenciais').style.width = `${percEssenciais}%`;
 
-        // Pending
+        $('valEstiloVida').textContent = `${fmt(estiloGasto)} / ${fmt(tetoEstilo)}`;
+        $('lblEstiloVida').textContent = `${percEstilo.toFixed(0)}%`;
+        $('barEstiloVida').style.width = `${percEstilo}%`;
+
+        $('dashSaldoLivre').textContent = fmt(saldoLivre);
+        if (saldoLivre < 0) {
+            $('dashSaldoLivre').style.color = '#ef5350';
+        } else {
+            $('dashSaldoLivre').style.color = '#a5d6a7';
+        }
+
+        // Pending Alert Box
+        let pending = 0, pendTotal = 0;
+        txs.forEach(t => {
+            if (t.tipo === 'despesa' && t.pendente) {
+                pending++;
+                pendTotal += t.valor;
+            }
+        });
+
         if (pending > 0) {
             $('pendingCard').classList.remove('hidden');
             $('pendingCount').textContent = pending;
             $('pendingTotal').textContent = fmt(pendTotal);
-        } else { $('pendingCard').classList.add('hidden'); }
+        } else {
+            $('pendingCard').classList.add('hidden');
+        }
 
         // Limit alert
-        if (despCom > config.limite) { $('alertBar').classList.remove('hidden'); }
-        else { $('alertBar').classList.add('hidden'); }
+        const despCom = txs.filter(t => t.tipo === 'despesa' && !t.pendente && t.quem === 'Comum').reduce((s, t) => s + t.valor, 0);
+        if ($('alertBar')) {
+            if (despCom > config.limite) { $('alertBar').classList.remove('hidden'); }
+            else { $('alertBar').classList.add('hidden'); }
+        }
 
-        // Recent
+        // List Render
         renderRecent(txs);
-        drawChart(txs);
     }
 
     function renderRecent(txs) {
-        const filtered = currentFilter === 'Todos' ? txs : txs.filter(t => t.quem === currentFilter);
+        // Filtragem Combinada (Pessoa + Aba de Status)
+        let filtered = currentFilter === 'Todos' ? txs : txs.filter(t => t.quem === currentFilter);
+
+        if (currentTabList === 'pagas') {
+            filtered = filtered.filter(t => !t.pendente);
+        } else if (currentTabList === 'pendentes') {
+            filtered = filtered.filter(t => t.pendente);
+        }
+
         const sorted = [...filtered].sort((a, b) => new Date(b.data) - new Date(a.data));
         const list = $('recentList');
         const empty = $('emptyState');
@@ -178,13 +223,13 @@
             const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
             const isIncome = t.tipo === 'receita';
             const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
-            const pending = t.pendente ? '<span class="ri-pending">PENDENTE</span>' : '';
+            const pending = t.pendente ? '<span class="ri-pending">A PAGAR</span>' : '<span class="ri-liquidado">PAGO</span>';
             return `<div class="recent-item" data-id="${t.id}">
                 <span class="ri-icon">${quemIcon}</span>
                 <div class="ri-info"><span class="ri-desc">${t.descricao}${pending}</span><span class="ri-meta">${dateStr} • ${t.subcategoria || t.categoria}</span></div>
                 <span class="ri-val ${isIncome ? 'income' : 'expense'}">${isIncome ? '+' : '-'}${fmt(t.valor)}</span>
                 <div class="ri-actions">
-                    ${t.pendente ? `<button onclick="FC.markPaid('${t.id}')" title="Marcar pago">✅</button>` : ''}
+                    ${t.pendente ? `<button onclick="FC.markPaid('${t.id}')" title="Marcar pago">✅</button>` : `<button onclick="FC.markUnpaid('${t.id}')" title="Marcar pendente">⏳</button>`}
                     <button onclick="FC.editEntry('${t.id}')" title="Editar">✏️</button>
                     <button onclick="FC.deleteEntry('${t.id}')" title="Excluir">🗑️</button>
                 </div>
@@ -192,46 +237,27 @@
         }).join('');
     }
 
-    function drawChart(txs) {
-        const canvas = $('chartSaldo');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        const w = canvas.width = canvas.parentElement.offsetWidth;
-        const h = 60;
-        ctx.clearRect(0, 0, w, h);
-
-        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-        const dailySaldo = Array(daysInMonth).fill(0);
-        txs.forEach(t => {
-            const d = new Date(t.data + 'T12:00:00').getDate() - 1;
-            if (d >= 0 && d < daysInMonth) dailySaldo[d] += t.tipo === 'receita' ? t.valor : -t.valor;
-        });
-        let running = 0;
-        const points = dailySaldo.map(v => { running += v; return running; });
-
-        const maxV = Math.max(...points.map(Math.abs), 1);
-        const pad = 8;
-        ctx.beginPath();
-        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-        ctx.lineWidth = 2;
-        points.forEach((p, i) => {
-            const x = pad + (i / (daysInMonth - 1)) * (w - pad * 2);
-            const y = h / 2 - (p / maxV) * (h / 2 - pad);
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-    }
+    // Chart has been removed from new design, no need to draw.
+    function drawChart() { return; }
 
     FC.markPaid = id => {
         const t = transacoes.find(x => x.id === id);
         if (t) { t.pendente = false; saveAll(); refreshDashboard(); toast('✅ Marcado como pago!'); }
     };
 
+    FC.markUnpaid = id => {
+        const t = transacoes.find(x => x.id === id);
+        if (t) { t.pendente = true; saveAll(); refreshDashboard(); toast('⏳ Marcado como pendente!'); }
+    };
+
     FC.editEntry = id => {
         const t = transacoes.find(x => x.id === id);
         if (!t) return;
-        editingId = id;
+
+        // goTo pageNovo clears the form and editingId via resetForm(), so we must set editingId AFTER calling it!
         FC.goTo('pageNovo');
+        editingId = id;
+
         $('novoTitle').textContent = 'Editar Lançamento';
         // Fill form
         $$('.tipo-btn').forEach(b => b.classList.toggle('active', b.dataset.t === t.tipo));
@@ -241,14 +267,45 @@
         $('fData').value = t.data;
         $('fPendente').checked = t.pendente || false;
         if (t.destino) $('fDestino').value = t.destino;
+
+        // Recurrence UI sync
+        let rType = 'unico';
+        if (t.recorrencia === 'fixa') rType = 'fixa';
+        else if (t.recorrencia === 'parcelada') rType = 'parcelada';
+
+        $$('input[name="recType"]').forEach(r => r.checked = (r.value === rType));
+        if (rType === 'fixa') {
+            $('fFixaPeriodo').value = t.periodo || 'mensal';
+            $('lblRecorrencia').textContent = 'Fixa (recorrente) ▸';
+            $('fixaFields').classList.remove('hidden');
+        } else if (rType === 'parcelada') {
+            $('lblRecorrencia').textContent = 'Parcelado ▸';
+            $('parcelaFields').classList.remove('hidden');
+        } else {
+            $('lblRecorrencia').textContent = 'Não recorrente ▸';
+            $('fixaFields').classList.add('hidden');
+            $('parcelaFields').classList.add('hidden');
+        }
+
         fillCategorias(t.categoria);
-        setTimeout(() => { if (t.subcategoria) $('fSubcategoria').value = t.subcategoria; }, 50);
+        setTimeout(() => {
+            if (t.subcategoria) $('fSubcategoria').value = t.subcategoria;
+            if (t.cartao) $('fCartao').value = t.cartao;
+            toggleCartaoFields();
+        }, 50);
     };
 
     FC.deleteEntry = id => {
         if (!confirm('Excluir lançamento?')) return;
         transacoes = transacoes.filter(x => x.id !== id);
         saveAll(); refreshDashboard(); toast('🗑️ Excluído');
+        supabase.from('transacoes').delete().eq('id', id).then();
+    };
+
+    FC.confirmEditRec = choice => {
+        window.recEditChoice = choice;
+        FC.closeModal('modalRecEdit');
+        saveEntry();
     };
 
     // ===== CARTÕES =====
@@ -322,6 +379,7 @@
         if (!confirm('Excluir cartão?')) return;
         cartoes = cartoes.filter(c => c.id !== id);
         saveAll(); refreshCartoes(); toast('🗑️ Cartão excluído');
+        supabase.from('cartoes').delete().eq('id', id).then();
     };
 
     let cartaoFaturaAtual = null;
@@ -520,8 +578,47 @@
 
         if (editingId) {
             const idx = transacoes.findIndex(t => t.id === editingId);
-            if (idx >= 0) Object.assign(transacoes[idx], { descricao: desc, valor, data, tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente, cartao });
+            if (idx >= 0) {
+                const t = transacoes[idx];
+                const isRecurring = (t.recorrencia === 'gerada' || t.recorrencia === 'fixa');
+
+                if (isRecurring && !window.recEditChoice) {
+                    window.tempEditData = { desc, valor, data, tipo, quem, cat, subcat, destino, pendente, cartao, recType, periodo: $('fFixaPeriodo').value };
+                    FC.openModal('modalRecEdit');
+                    return;
+                }
+
+                if (window.recEditChoice === 'allFuture') {
+                    const d = window.tempEditData;
+                    const oldFixa = transacoes.find(x => x.recorrencia === 'fixa' && x.descricao === t.descricao && x.data <= t.data);
+                    if (oldFixa && oldFixa.id !== t.id) { oldFixa.recorrencia = 'unico'; supabase.from('transacoes').upsert({ id: oldFixa.id, recorrencia: 'unico' }).then(); }
+
+                    const fGeradas = transacoes.filter(x => x.recorrencia === 'gerada' && x.descricao === t.descricao && x.data > t.data);
+                    const delIds = fGeradas.map(x => x.id);
+                    transacoes = transacoes.filter(x => !delIds.includes(x.id));
+                    if (delIds.length > 0) supabase.from('transacoes').delete().in('id', delIds).then();
+
+                    Object.assign(t, { descricao: d.desc, valor: d.valor, data: d.data, tipo: d.tipo, quem: d.quem, categoria: d.cat, subcategoria: d.subcat, destino: d.destino, pendente: d.pendente, cartao: d.cartao, recorrencia: 'fixa', periodo: d.periodo || t.periodo || 'mensal' });
+                } else if (window.recEditChoice === 'onlyThis') {
+                    const d = window.tempEditData;
+                    if (t.recorrencia === 'fixa') {
+                        const nextD = new Date(t.data + 'T12:00:00');
+                        if (t.periodo === 'mensal') nextD.setMonth(nextD.getMonth() + 1);
+                        else nextD.setFullYear(nextD.getFullYear() + 1);
+                        const nxDStr = nextD.toISOString().split('T')[0];
+                        transacoes.push({ id: uid(), descricao: t.descricao, valor: t.valor, data: nxDStr, tipo: t.tipo, quem: t.quem, categoria: t.categoria, subcategoria: t.subcategoria, destino: t.destino, pendente: true, cartao: t.cartao, recorrencia: 'fixa', periodo: t.periodo });
+                        t.recorrencia = 'gerada';
+                    }
+                    Object.assign(t, { descricao: d.desc, valor: d.valor, data: d.data, tipo: d.tipo, quem: d.quem, categoria: d.cat, subcategoria: d.subcat, destino: d.destino, pendente: d.pendente, cartao: d.cartao });
+                } else {
+                    const updateObj = { descricao: desc, valor, data, tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente, cartao, recorrencia: recType };
+                    if (recType === 'fixa') updateObj.periodo = $('fFixaPeriodo').value;
+                    Object.assign(transacoes[idx], updateObj);
+                }
+            }
             editingId = null;
+            window.recEditChoice = null;
+            window.tempEditData = null;
             toast('✅ Lançamento atualizado');
         } else if (recType === 'parcelada') {
             const qtd = parseInt($('fParcelaQtd').value) || 2;
@@ -549,6 +646,8 @@
         }
 
         saveAll();
+        generateRecurring();
+        refreshDashboard();
         FC.goTo('pageHome');
     }
 
@@ -643,20 +742,33 @@
     }
 
     // ===== GENERATE FIXED ENTRIES =====
-    function generateRecurring() {
-        const today = new Date();
+    function generateRecurring(targetDate) {
+        // Look ahead 12 months to guarantee future visibility
+        const limitDate = targetDate ? new Date(targetDate) : new Date();
+        limitDate.setFullYear(limitDate.getFullYear() + 1);
+
         const fixas = transacoes.filter(t => t.recorrencia === 'fixa');
         fixas.forEach(template => {
+            const p = (template.periodo || 'mensal').toLowerCase();
             const lastDate = new Date(template.data + 'T12:00:00');
             let nextDate = new Date(lastDate);
-            if (template.periodo === 'mensal') nextDate.setMonth(nextDate.getMonth() + 1);
-            else if (template.periodo === 'semanal') nextDate.setDate(nextDate.getDate() + 7);
-            else if (template.periodo === 'semestral') nextDate.setMonth(nextDate.getMonth() + 6);
-            else if (template.periodo === 'anual') nextDate.setFullYear(nextDate.getFullYear() + 1);
 
-            while (nextDate <= today) {
-                const dateStr = nextDate.toISOString().split('T')[0];
+            // Advance one period for the first generation
+            if (p === 'mensal') nextDate.setMonth(nextDate.getMonth() + 1);
+            else if (p === 'semanal') nextDate.setDate(nextDate.getDate() + 7);
+            else if (p === 'semestral') nextDate.setMonth(nextDate.getMonth() + 6);
+            else if (p === 'anual') nextDate.setFullYear(nextDate.getFullYear() + 1);
+            else nextDate.setMonth(nextDate.getMonth() + 1); // fallback
+
+            while (nextDate <= limitDate) {
+                // Safeguard timezone format: build YYYY-MM-DD manually
+                const yyyy = nextDate.getFullYear();
+                const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
+                const dd = String(nextDate.getDate()).padStart(2, '0');
+                const dateStr = `${yyyy}-${mm}-${dd}`;
+
                 const exists = transacoes.some(t => t.descricao === template.descricao && t.data === dateStr && t.recorrencia !== 'fixa');
+
                 if (!exists) {
                     transacoes.push({
                         id: uid(), descricao: template.descricao, valor: template.valor, data: dateStr,
@@ -665,10 +777,20 @@
                         cartao: template.cartao || '', recorrencia: 'gerada'
                     });
                 }
-                if (template.periodo === 'mensal') nextDate.setMonth(nextDate.getMonth() + 1);
-                else if (template.periodo === 'semanal') nextDate.setDate(nextDate.getDate() + 7);
-                else if (template.periodo === 'semestral') nextDate.setMonth(nextDate.getMonth() + 6);
-                else nextDate.setFullYear(nextDate.getFullYear() + 1);
+
+                // Advance one period for next iteration
+                const prevDate = nextDate.getDate();
+                if (p === 'mensal') {
+                    nextDate.setMonth(nextDate.getMonth() + 1);
+                    if (nextDate.getDate() < prevDate) nextDate.setDate(0); // Fixes 31/01 to 28/02 skip bug
+                }
+                else if (p === 'semanal') nextDate.setDate(nextDate.getDate() + 7);
+                else if (p === 'semestral') {
+                    nextDate.setMonth(nextDate.getMonth() + 6);
+                    if (nextDate.getDate() < prevDate) nextDate.setDate(0);
+                }
+                else if (p === 'anual') nextDate.setFullYear(nextDate.getFullYear() + 1);
+                else nextDate.setMonth(nextDate.getMonth() + 1); // fallback
             }
         });
         saveAll();
@@ -825,11 +947,30 @@
 
         // Initial render
         $('fData').value = new Date().toISOString().split('T')[0];
+    }
+
+    async function initCloud() {
+        try {
+            if ($('novoTitle')) $('novoTitle').textContent = 'Carregando Dados... ⏳';
+            const [rT, rC, rCat, rConf] = await Promise.all([
+                supabase.from('transacoes').select('*'),
+                supabase.from('cartoes').select('*'),
+                supabase.from('categorias').select('dados').eq('id', 'unico').single(),
+                supabase.from('config').select('*').eq('id', 'unico').single()
+            ]);
+            if (rT.data && rT.data.length > 0) transacoes = rT.data;
+            if (rC.data && rC.data.length > 0) cartoes = rC.data;
+            if (rCat.data) categorias = rCat.data.dados;
+            if (rConf.data) { config.limite = rConf.data.limite; config.webhookUrl = rConf.data.webhookurl || rConf.data.webhookUrl || ''; }
+            if ($('novoTitle')) $('novoTitle').textContent = 'Nova Despesa';
+        } catch (e) { console.log('Erro Supabase', e); }
+
+        init();
         fillCategorias();
         fillCartaoSelect();
         refreshDashboard();
     }
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-    else init();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initCloud);
+    else initCloud();
 })();

@@ -728,6 +728,17 @@ select {
     margin-left: 6px;
 }
 
+.ri-liquidado {
+    display: inline-block;
+    font-size: .6rem;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, .15);
+    color: #10b981;
+    font-weight: 700;
+    margin-left: 6px;
+}
+
 .ri-actions {
     display: flex;
     gap: 4px;
@@ -1612,6 +1623,149 @@ select {
     margin-left: 8px;
     font-size: 1rem;
     color: var(--red);
+}
+
+/* ===== MANAGER DASHBOARD ===== */
+.gerencial-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: white;
+    border-radius: 0 0 30px 30px;
+    padding: 20px 20px 30px 20px;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(0, 150, 136, 0.2);
+}
+
+.logical-summary {
+    margin-top: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 15px;
+    opacity: 0.9;
+}
+
+.summary-row strong {
+    font-size: 18px;
+    opacity: 1;
+}
+
+.summary-row.livre {
+    margin-top: 15px;
+}
+
+.summary-row.livre span {
+    font-size: 16px;
+    font-weight: 500;
+    opacity: 1;
+}
+
+.summary-row.livre strong {
+    font-size: 28px;
+    font-weight: 800;
+    color: #a5d6a7;
+    /* Light green that pops on dark primary */
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.summary-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 15px 0;
+}
+
+/* Progress Bars */
+.progress-section {
+    margin-top: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.progress-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.progress-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    opacity: 0.85;
+}
+
+.progress-track {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-fill.essenciais {
+    background: #FFCA28;
+    /* Amber */
+}
+
+.progress-fill.estilo-vida {
+    background: #ce93d8;
+    /* Light Purple */
+}
+
+/* List Tabs */
+.list-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.list-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.list-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 15px;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.list-tab.active {
+    color: var(--primary);
+    background: rgba(0, 150, 136, 0.1);
+}
+
+.list-tab:hover {
+    color: var(--text);
+}
+
+.sub-filters {
+    margin-bottom: 15px;
+    margin-top: -10px;
 }
 
 /* ===== MOBILE ===== */

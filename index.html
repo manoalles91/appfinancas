@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 
 <body>
@@ -47,8 +47,8 @@
         <!-- ========== PAGE: HOME ========== -->
         <section id="pageHome" class="page active">
 
-            <!-- Header -->
-            <header class="page-header">
+            <!-- Header Gerencial -->
+            <header class="page-header gerencial-header">
                 <div class="header-row">
                     <div class="logo-mini"><span>💰</span> <strong>FinCasal</strong></div>
                     <div class="header-actions">
@@ -56,85 +56,83 @@
                         <button id="btnSync" class="btn-icon" title="Sincronizar">🔄</button>
                     </div>
                 </div>
+
                 <!-- Month Nav -->
                 <div class="month-nav">
                     <button id="btnPrev" class="btn-month">◀</button>
                     <span id="lblMonth" class="month-label">Março 2026</span>
                     <button id="btnNext" class="btn-month">▶</button>
                 </div>
-                <!-- Saldo Summary -->
-                <div class="saldo-row">
-                    <div class="saldo-item"><span class="saldo-lbl">Inicial</span><span id="saldoInicial"
-                            class="saldo-val">R$ 0</span></div>
-                    <div class="saldo-item saldo-main"><span class="saldo-lbl">Saldo</span><span id="saldoAtual"
-                            class="saldo-val big">R$ 0</span></div>
-                    <div class="saldo-item"><span class="saldo-lbl">Previsto</span><span id="saldoPrevisto"
-                            class="saldo-val">R$ 0</span></div>
+
+                <!-- Resumo Lógico -->
+                <div class="logical-summary">
+                    <div class="summary-row receita">
+                        <span>Receitas do Mês (Pagas)</span>
+                        <strong id="dashReceitas">R$ 0,00</strong>
+                    </div>
+
+                    <!-- Progress Bars -->
+                    <div class="progress-section">
+                        <div class="progress-item">
+                            <div class="progress-labels">
+                                <span>🏠 Essenciais <span id="lblEssenciais">0%</span></span>
+                                <span id="valEssenciais">R$ 0 / R$ 0</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill essenciais" id="barEssenciais" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="progress-item">
+                            <div class="progress-labels">
+                                <span>🍕 Estilo de Vida <span id="lblEstiloVida">0%</span></span>
+                                <span id="valEstiloVida">R$ 0 / R$ 0</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill estilo-vida" id="barEstiloVida" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="summary-divider"></div>
+
+                    <div class="summary-row livre">
+                        <span>Saldo Livre Projetado</span>
+                        <strong id="dashSaldoLivre">R$ 0,00</strong>
+                    </div>
                 </div>
-                <!-- Mini Chart -->
-                <canvas id="chartSaldo" class="mini-chart" height="60"></canvas>
             </header>
 
-            <!-- Pending Alert -->
-            <div id="pendingCard" class="pending-card hidden" onclick="FC.goTo('pageHome'); FC.showPendentes()">
+            <!-- Pending Alert (Mantido) -->
+            <div id="pendingCard" class="pending-card hidden" onclick="FC.filterByTab('pendentes')">
                 <span class="pending-icon">🏦</span>
                 <p>Você tem <strong id="pendingCount">0</strong> despesas pendentes no total de <strong
                         id="pendingTotal">R$ 0</strong></p>
                 <span class="pending-link">Verificar</span>
             </div>
 
-            <!-- Visão Geral -->
-            <div class="overview-section">
-                <h3 class="section-title-sm">Visão geral</h3>
-                <div class="overview-list">
-                    <div class="overview-item">
-                        <span class="ov-icon ov-green">＋</span>
-                        <div class="ov-info"><strong>Receitas</strong><span class="ov-sub">Previsto</span></div>
-                        <div class="ov-vals"><span id="ovReceitaAtual" class="ov-val green">R$ 0</span><span
-                                id="ovReceitaPrev" class="ov-prev">R$ 0</span></div>
-                    </div>
-                    <div class="overview-item">
-                        <span class="ov-icon ov-red">−</span>
-                        <div class="ov-info"><strong>Despesas</strong><span class="ov-sub">Previsto</span></div>
-                        <div class="ov-vals"><span id="ovDespesaAtual" class="ov-val red">R$ 0</span><span
-                                id="ovDespesaPrev" class="ov-prev">R$ 0</span></div>
-                    </div>
-                    <div class="overview-item">
-                        <span class="ov-icon ov-blue">💳</span>
-                        <div class="ov-info"><strong>Cartões de crédito</strong><span class="ov-sub">Total faturas a
-                                pagar</span></div>
-                        <div class="ov-vals"><span id="ovCartoes" class="ov-val">R$ 0</span><span id="ovCartoesPrev"
-                                class="ov-prev">R$ 0</span></div>
-                    </div>
+            <!-- Transaction List with Tabs -->
+            <div class="recent-section main-list-section">
+                <!-- Abas -->
+                <div class="list-tabs">
+                    <button class="list-tab active" data-tab="todas" onclick="FC.filterByTab('todas')">📑 Todas</button>
+                    <button class="list-tab" data-tab="pagas" onclick="FC.filterByTab('pagas')">✅ Pagas</button>
+                    <button class="list-tab" data-tab="pendentes" onclick="FC.filterByTab('pendentes')">⏳ A
+                        Pagar</button>
                 </div>
-            </div>
 
-            <!-- Saldo Casal -->
-            <div class="casal-section">
-                <h3 class="section-title-sm">Saldo do Casal</h3>
-                <div class="casal-grid">
-                    <div class="casal-card card-eu"><span>👤 Eu</span><strong id="casalEu">R$ 0</strong><span
-                            id="contribEu" class="casal-perc">0%</span></div>
-                    <div class="casal-card card-esposa"><span>👩 Esposa</span><strong id="casalEsposa">R$
-                            0</strong><span id="contribEsposa" class="casal-perc">0%</span></div>
-                    <div class="casal-card card-total"><span>🏠 Total</span><strong id="casalTotal">R$ 0</strong></div>
-                </div>
-            </div>
-
-            <!-- Recent Transactions -->
-            <div class="recent-section">
-                <div class="section-header-row">
-                    <h3 class="section-title-sm">Últimos lançamentos</h3>
+                <div class="section-header-row sub-filters">
                     <div class="filter-pills">
                         <button class="pill active" data-f="Todos">Todos</button>
-                        <button class="pill" data-f="Eu">👤</button>
-                        <button class="pill" data-f="Esposa">👩</button>
-                        <button class="pill" data-f="Comum">🏠</button>
+                        <button class="pill" data-f="Eu">👤 Eu</button>
+                        <button class="pill" data-f="Esposa">👩 Esposa</button>
+                        <button class="pill" data-f="Comum">🏠 Comum</button>
                     </div>
                 </div>
+
                 <div id="recentList" class="recent-list"></div>
-                <div id="emptyState" class="empty-state"><span>📭</span>
-                    <p>Nenhum lançamento</p>
+                <div id="emptyState" class="empty-state">
+                    <span>📭</span>
+                    <p>Nenhuma despesa nesta aba</p>
                 </div>
             </div>
         </section>
@@ -455,6 +453,26 @@
             </div>
         </div>
 
+        <!-- Modal Edit Recurrence Choice -->
+        <div id="modalRecEdit" class="modal-overlay hidden">
+            <div class="modal" style="text-align:center;">
+                <div class="modal-header">
+                    <h3>Opções de Edição</h3>
+                    <button class="close-btn" onclick="FC.closeModal('modalRecEdit')">×</button>
+                </div>
+                <div class="modal-body" style="display:flex; flex-direction:column; gap: 15px; margin-top:20px;">
+                    <p style="color:var(--text); font-size:14px; text-align:center;">Esta é uma despesa
+                        recorrente.<br>Como deseja aplicar a alteração?</p>
+                    <button class="btn-confirm" onclick="FC.confirmEditRec('onlyThis')"
+                        style="background:var(--bg3); color:var(--text); border:1px solid var(--border);">Apenas este
+                        mês</button>
+                    <button class="btn-confirm" onclick="FC.confirmEditRec('allFuture')">Este e os próximos
+                        meses</button>
+                    <button class="btn-cancel" onclick="FC.closeModal('modalRecEdit')">Cancelar</button>
+                </div>
+            </div>
+        </div>
+
     </div><!-- end app-container -->
 
     <!-- ===== BOTTOM NAV ===== -->
@@ -472,7 +490,9 @@
     <!-- Toast -->
     <div id="toast" class="toast hidden"></div>
 
-    <script src="app.js"></script>
+    <!-- App Logic -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js?v=3"></script>
 </body>
 
 </html>
