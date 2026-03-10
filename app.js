@@ -830,9 +830,10 @@
 
         // Fixas
         const fixas = transacoes.filter(t => t.recorrencia === 'fixa');
-        $('fixasList').innerHTML = fixas.map(t =>
-            `<div class="cfg-item"><span class="cfg-item-name">📌 ${t.descricao} (${fmt(t.valor)} - ${t.periodo})</span><button onclick="FC.deleteEntry('${t.id}');FC.goTo('pageConfig')">Excluir</button></div>`
-        ).join('') || '<p style="text-align:center;color:var(--text3);font-size:.85rem;padding:8px">Nenhuma despesa fixa</p>';
+        $('fixasList').innerHTML = fixas.map(t => {
+            const icon = t.tipo === 'receita' ? '💰' : '📌';
+            return `<div class="cfg-item"><span class="cfg-item-name">${icon} ${t.descricao} (${fmt(t.valor)} - ${t.periodo})</span><button onclick="FC.deleteEntry('${t.id}');FC.goTo('pageConfig')">Excluir</button></div>`;
+        }).join('') || '<p style="text-align:center;color:var(--text3);font-size:.85rem;padding:8px">Nenhum lançamento fixo</p>';
 
         // Values
         $('cfgLimite').value = config.limite.toFixed(2).replace('.', ',');
