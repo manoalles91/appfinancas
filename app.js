@@ -182,14 +182,25 @@
         }
 
         // Renderizar pills de subcategorias
+        const catsTotals = {};
+        txs.filter(t => t.tipo === 'despesa').forEach(t => {
+            const c = t.categoria || 'Geral';
+            catsTotals[c] = (catsTotals[c] || 0) + t.valor;
+        });
+
+        const renderPill = (catName) => {
+            const total = catsTotals[catName] || 0;
+            return total > 0 ? `<span class="subcat-pill">${catName} <strong>${fmt(total)}</strong></span>` : '';
+        };
+
         if ($('pillsEssenciais')) {
-            $('pillsEssenciais').innerHTML = (categorias['Essenciais'] || []).map(s => `<span class="subcat-pill">${s}</span>`).join('');
+            $('pillsEssenciais').innerHTML = (categorias['Essenciais'] || []).map(renderPill).join('');
         }
         if ($('pillsEstiloVida')) {
-            $('pillsEstiloVida').innerHTML = (categorias['Estilo de Vida'] || []).map(s => `<span class="subcat-pill">${s}</span>`).join('');
+            $('pillsEstiloVida').innerHTML = (categorias['Estilo de Vida'] || []).map(renderPill).join('');
         }
         if ($('pillsInvestimentos')) {
-            $('pillsInvestimentos').innerHTML = (categorias['Investimentos'] || []).map(s => `<span class="subcat-pill">${s}</span>`).join('');
+            $('pillsInvestimentos').innerHTML = (categorias['Investimentos'] || []).map(renderPill).join('');
         }
 
         $('dashSaldoLivre').textContent = fmt(saldoLivre);

@@ -1747,6 +1747,14 @@ select {
     padding: 4px 10px;
     border-radius: 12px;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.subcat-pill strong {
+    color: var(--text);
+    font-weight: 700;
 }
 
 /* List Tabs */
