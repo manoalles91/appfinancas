@@ -333,7 +333,8 @@
                                 <div class="e-desc">${t.descricao} <span style="font-size:0.7rem">${quemIcon} ${dateStr}</span></div>
                                 <div class="e-right">
                                     <span class="e-val">${fmt(t.valor)}</span>
-                                    <button class="e-check" onclick="event.stopPropagation(); FC.togglePaid('${t.id}')">${t.pendente ? '⏳' : '✅'}</button>
+                                    <button class="btn-act" style="margin-right:8px" onclick="event.stopPropagation(); FC.editEntry('${t.id}')" title="Editar">✏️</button>
+                                    <button class="e-check" onclick="event.stopPropagation(); FC.togglePaid('${t.id}')" title="Mudar Status">${t.pendente ? '⏳' : '✅'}</button>
                                 </div>
                             </div>
                     `;
