@@ -409,12 +409,15 @@
         } else if (ids.length > 1) {
             supabase.from('transacoes').delete().in('id', ids).then();
         }
+
+        if ($('pageNovo').classList.contains('active')) {
+            FC.goTo('pageHome');
+        }
     }
 
     FC.deleteCurrentEntry = () => {
         if (!editingId) return;
         const idToDel = editingId;
-        FC.goTo('pageHome');
         FC.deleteEntry(idToDel);
     };
 

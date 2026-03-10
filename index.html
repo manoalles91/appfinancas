@@ -485,49 +485,50 @@
                     <button class="btn-cancel" onclick="FC.closeModal('modalRecEdit')">Cancelar</button>
                 </div>
             </div>
+        </div>
 
-            <!-- Modal Delete Recurrence Choice -->
-            <div id="modalRecDelete" class="modal-overlay hidden">
-                <div class="modal" style="text-align:center;">
-                    <div class="modal-header">
-                        <h3>Opções de Exclusão</h3>
-                        <button class="close-btn" onclick="FC.closeModal('modalRecDelete')">×</button>
-                    </div>
-                    <div class="modal-body" style="display:flex; flex-direction:column; gap: 15px; margin-top:20px;">
-                        <p style="color:var(--text); font-size:14px; text-align:center;">Este é um lançamento
-                            recorrente/parcelado.<br>Como deseja excluir?</p>
-                        <button class="btn-confirm" onclick="FC.confirmDeleteRec('onlyThis')"
-                            style="background:var(--bg3); color:var(--text); border:1px solid var(--border);">Apenas
-                            este lançamento</button>
-                        <button class="btn-confirm" onclick="FC.confirmDeleteRec('allFuture')"
-                            style="background:rgba(239, 68, 68, 0.8); border:none;">Este e os futuros</button>
-                        <button class="btn-confirm" onclick="FC.confirmDeleteRec('all')"
-                            style="background:var(--danger); border:none;">Todos (incluindo passados)</button>
-                        <button class="btn-cancel" onclick="FC.closeModal('modalRecDelete')">Cancelar</button>
-                    </div>
+        <!-- Modal Delete Recurrence Choice -->
+        <div id="modalRecDelete" class="modal-overlay hidden">
+            <div class="modal" style="text-align:center;">
+                <div class="modal-header">
+                    <h3>Opções de Exclusão</h3>
+                    <button class="close-btn" onclick="FC.closeModal('modalRecDelete')">×</button>
+                </div>
+                <div class="modal-body" style="display:flex; flex-direction:column; gap: 15px; margin-top:20px;">
+                    <p style="color:var(--text); font-size:14px; text-align:center;">Este é um lançamento
+                        recorrente/parcelado.<br>Como deseja excluir?</p>
+                    <button class="btn-confirm" onclick="FC.confirmDeleteRec('onlyThis')"
+                        style="background:var(--bg3); color:var(--text); border:1px solid var(--border);">Apenas
+                        este lançamento</button>
+                    <button class="btn-confirm" onclick="FC.confirmDeleteRec('allFuture')"
+                        style="background:rgba(239, 68, 68, 0.8); border:none;">Este e os futuros</button>
+                    <button class="btn-confirm" onclick="FC.confirmDeleteRec('all')"
+                        style="background:var(--danger); border:none;">Todos (incluindo passados)</button>
+                    <button class="btn-cancel" onclick="FC.closeModal('modalRecDelete')">Cancelar</button>
                 </div>
             </div>
+        </div>
 
-        </div><!-- end app-container -->
+    </div><!-- end app-container -->
 
-        <!-- ===== BOTTOM NAV ===== -->
-        <nav id="bottomNav" class="bottom-nav">
-            <button class="nav-btn active" data-page="pageHome"><span class="nav-icon">🏠</span><span
-                    class="nav-label">Home</span></button>
-            <button class="nav-btn" data-page="pageNovo"><span class="nav-icon">➕</span><span
-                    class="nav-label">Novo</span></button>
-            <button class="nav-btn" data-page="pageCartoes"><span class="nav-icon">💳</span><span
-                    class="nav-label">Cartões</span></button>
-            <button class="nav-btn" data-page="pageConfig"><span class="nav-icon">⚙️</span><span
-                    class="nav-label">Config</span></button>
-        </nav>
+    <!-- ===== BOTTOM NAV ===== -->
+    <nav id="bottomNav" class="bottom-nav">
+        <button class="nav-btn active" data-page="pageHome"><span class="nav-icon">🏠</span><span
+                class="nav-label">Home</span></button>
+        <button class="nav-btn" data-page="pageNovo"><span class="nav-icon">➕</span><span
+                class="nav-label">Novo</span></button>
+        <button class="nav-btn" data-page="pageCartoes"><span class="nav-icon">💳</span><span
+                class="nav-label">Cartões</span></button>
+        <button class="nav-btn" data-page="pageConfig"><span class="nav-icon">⚙️</span><span
+                class="nav-label">Config</span></button>
+    </nav>
 
-        <!-- Toast -->
-        <div id="toast" class="toast hidden"></div>
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
 
-        <!-- App Logic -->
-        <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-        <script src="app.js?v=3"></script>
+    <!-- App Logic -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js?v=3"></script>
 </body>
 
 </html>
