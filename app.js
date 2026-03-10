@@ -329,12 +329,10 @@
                     const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
 
                     html += `
-                            <div class="excel-item ${statusClass}" data-id="${t.id}" onclick="FC.editEntry('${t.id}')">
-                                <div class="e-desc">${t.descricao} <span style="font-size:0.7rem">${quemIcon} ${dateStr}</span></div>
+                            <div class="excel-item ${statusClass}" data-id="${t.id}" onclick="FC.togglePaid('${t.id}')">
+                                <div class="e-desc"><span onclick="event.stopPropagation(); FC.editEntry('${t.id}')" class="e-edit-icon" title="Editar">✏️</span> ${t.descricao}</div>
                                 <div class="e-right">
                                     <span class="e-val">${fmt(t.valor)}</span>
-                                    <button class="btn-act" style="margin-right:8px" onclick="event.stopPropagation(); FC.editEntry('${t.id}')" title="Editar">✏️</button>
-                                    <button class="e-check" onclick="event.stopPropagation(); FC.togglePaid('${t.id}')" title="Mudar Status">${t.pendente ? '⏳' : '✅'}</button>
                                 </div>
                             </div>
                     `;

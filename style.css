@@ -1377,8 +1377,8 @@ select {
 .excel-columns-container {
     display: flex;
     overflow-x: auto;
-    padding: 12px;
-    gap: 16px;
+    padding: 0;
+    gap: 0;
     scroll-snap-type: x mandatory;
     scrollbar-width: thin;
 }
@@ -1394,21 +1394,23 @@ select {
 
 .excel-column {
     flex: 0 0 260px;
-    /* Largura fixa da coluna tipo Trello/Planilha */
     display: flex;
     flex-direction: column;
     background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-right: 1px solid var(--border);
+    border-radius: 0;
     scroll-snap-align: start;
+}
+
+.excel-column:last-child {
+    border-right: none;
 }
 
 .excel-col-header {
     background: rgba(13, 148, 136, 0.05);
-    /* Leve tom de accent */
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 700;
-    padding: 8px 12px;
+    padding: 6px 12px;
     text-align: center;
     border-bottom: 1px solid var(--border);
     color: var(--text2);
@@ -1425,11 +1427,11 @@ select {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 12px;
+    padding: 6px 10px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
-    transition: 0.2s;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    background: transparent;
 }
 
 .excel-item:last-child {
@@ -1437,36 +1439,40 @@ select {
 }
 
 .excel-item:hover {
-    filter: brightness(1.05);
+    background: rgba(255, 255, 255, 0.03);
 }
 
-/* Status Colors (Fundo Leve com borda forte) */
-.excel-item.pending {
-    background: rgba(239, 68, 68, 0.05);
-    border-left: 3px solid #ef4444;
-    /* Vermelho */
+/* Status Colors (Text only for values) */
+.excel-item.pending .e-val {
+    color: var(--text);
 }
 
-.excel-item.paid {
-    background: rgba(16, 185, 129, 0.05);
-    border-left: 3px solid #10b981;
-    /* Verde */
+.excel-item.paid .e-val {
+    color: #10b981;
+    /* Verde pago */
 }
 
 .e-desc {
     display: flex;
-    flex-direction: column;
+    align-items: center;
     font-weight: 500;
     color: var(--text);
-    max-width: 120px;
+    max-width: 140px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.e-desc span {
-    color: var(--text3);
-    margin-top: 2px;
+.e-edit-icon {
+    cursor: pointer;
+    margin-right: 6px;
+    font-size: 0.7rem;
+    opacity: 0.5;
+    transition: 0.2s;
+}
+
+.e-edit-icon:hover {
+    opacity: 1;
 }
 
 .e-right {
@@ -1478,35 +1484,18 @@ select {
 .e-val {
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-}
-
-.e-check {
-    background: var(--bg3);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: 0.2s;
-}
-
-.e-check:hover {
-    transform: scale(1.1);
+    transition: color 0.2s;
 }
 
 .excel-subcat-totals {
     background: var(--bg2);
     border-top: 1px solid var(--border);
-    padding: 8px 12px;
+    padding: 6px 12px;
     font-size: 0.75rem;
     font-weight: 600;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
 }
 
 .tot-row {
