@@ -255,103 +255,55 @@
         if (sorted.length === 0) { list.innerHTML = ''; empty.style.display = 'block'; return; }
         empty.style.display = 'none';
 
-        // BOARD GROUPING
-        // 1. Group by category
-        const groups = {
-            'Receitas': {},
-            'Essenciais': {},
-            'Estilo de Vida': {},
-            'Investimentos': {}
-        };
-
-        sorted.forEach(t => {
-            let cat = t.categoria || 'Outros';
-            let macro = 'Outros';
-
-            if (t.tipo === 'receita') {
-                macro = 'Receitas';
-            } else if (categorias['Essenciais']?.includes(cat)) {
-                macro = 'Essenciais';
-            } else if (categorias['Estilo de Vida']?.includes(cat)) {
-                macro = 'Estilo de Vida';
-            } else if (categorias['Investimentos']?.includes(cat)) {
-                macro = 'Investimentos';
-            } else {
-                macro = 'Outros';
-                if (!groups[macro]) groups[macro] = {};
-            }
-
-            const sub = t.subcategoria || t.categoria || 'Geral';
-            if (!groups[macro][sub]) groups[macro][sub] = [];
-            groups[macro][sub].push(t);
-        });
-
+        // TAGGED LIST RENDERING
         let html = '';
 
-        for (const [macro, subs] of Object.entries(groups)) {
-            if (!subs) continue;
-            const subKeys = Object.keys(subs);
-            if (subKeys.length === 0) continue;
+        sorted.forEach(t => {
+            const d = new Date(t.data + 'T12:00:00');
+            const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            const isIncome = t.tipo === 'receita';
+
+            // Determine Macro Category for coloring
+            let cat = t.categoria || 'Outros';
+            let macro = 'Outros';
+            if (isIncome) macro = 'Receitas';
+            else if (categorias['Essenciais']?.includes(cat)) macro = 'Essenciais';
+            else if (categorias['Estilo de Vida']?.includes(cat)) macro = 'Estilo de Vida';
+            else if (categorias['Investimentos']?.includes(cat)) macro = 'Investimentos';
 
             const macroClass = macro.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-');
+            const subName = t.subcategoria || t.categoria || 'Geral';
 
-            // Calcula total macro
-            let totalMacro = 0;
-            subKeys.forEach(s => subs[s].forEach(t => totalMacro += t.valor));
+            const statusBadge = t.pendente
+                ? `<div class="status-badge pend" onclick="FC.togglePaid('${t.id}')">⏳ Pendente</div>`
+                : `<div class="status-badge paid" onclick="FC.togglePaid('${t.id}')">✅ Pago</div>`;
 
-            html += `<div class="board-category ${macroClass}">
-                        <div class="board-cat-header">
-                            <h3>${macro.toUpperCase()}</h3>
-                            <span>${fmt(totalMacro)}</span>
+            const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
+
+            html += `
+                <div class="list-item" data-id="${t.id}">
+                    <div class="list-item-header">
+                        <div class="item-tags">
+                            <span class="item-tag ${macroClass}">${macro}</span>
+                            <span class="item-tag subcat">${subName}</span>
                         </div>
-                        <div class="board-subcat-row">`;
+                        <div class="item-actions">
+                            <button onclick="FC.editEntry('${t.id}')" class="btn-act" title="Editar">✏️</button>
+                            ${statusBadge}
+                        </div>
+                    </div>
+                    
+                    <div class="item-title-row">
+                        <div class="item-desc">${t.descricao} <span class="ri-icon-sm">${quemIcon}</span></div>
+                    </div>
 
-            for (const sub of subKeys) {
-                // Calcula total sub
-                let totalSub = subs[sub].reduce((acc, t) => acc + t.valor, 0);
-
-                html += `<div class="board-subcat-col">
-                            <div class="board-col-header">
-                                <h4>${sub.toUpperCase()}</h4>
-                                <span>${fmt(totalSub)}</span>
-                            </div>
-                            <div class="board-col-items">`;
-
-                subs[sub].forEach(t => {
-                    const d = new Date(t.data + 'T12:00:00');
-                    const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-                    const isIncome = t.tipo === 'receita';
-
-                    const btnHtml = t.pendente
-                        ? `<button class="board-check pend" onclick="FC.togglePaid('${t.id}')" title="Marcar pago">⏳</button>`
-                        : `<button class="board-check paid" onclick="FC.togglePaid('${t.id}')" title="Desfazer e marcar pendente">✅</button>`;
-
-                    const actionHtml = `<div class="board-acts">
-                                            <button onclick="FC.editEntry('${t.id}')" class="act-btn">✏️</button>
-                                          </div>`;
-
-                    const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
-
-                    html += `<div class="board-item ${t.pendente ? 'pendente' : 'liquidado'}" data-id="${t.id}">
-                                <div class="board-item-main">
-                                    <div class="board-item-title">${t.descricao} <span class="ri-icon-sm">${quemIcon}</span></div>
-                                    <div class="board-item-val ${isIncome ? 'income' : 'expense'}">${fmt(t.valor)}</div>
-                                </div>
-                                <div class="board-item-bottom">
-                                    <span class="board-item-date">${dateStr}</span>
-                                    ${actionHtml}
-                                    ${btnHtml}
-                                </div>
-                             </div>`;
-                });
-
-                html += `   </div>
-                         </div>`;
-            }
-
-            html += `   </div>
-                     </div>`;
-        }
+                    <div class="list-item-footer">
+                        <span class="item-date">${dateStr}</span>
+                        <div class="item-val ${isIncome ? 'income' : 'expense'}">${fmt(t.valor)}</div>
+                    </div>
+                </div>
+            `;
+        });
 
         list.innerHTML = html;
     }
