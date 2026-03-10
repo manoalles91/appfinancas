@@ -255,56 +255,107 @@
         if (sorted.length === 0) { list.innerHTML = ''; empty.style.display = 'block'; return; }
         empty.style.display = 'none';
 
-        // TAGGED LIST RENDERING
-        let html = '';
+        // EXCEL-STYLE BOARD RENDERING
+        let html = '<div class="excel-board">';
+
+        // Group by Macro Category
+        const macros = {
+            'Receitas': { items: [] },
+            'Essenciais': { items: [] },
+            'Estilo de Vida': { items: [] },
+            'Investimentos': { items: [] },
+            'Outros': { items: [] }
+        };
 
         sorted.forEach(t => {
-            const d = new Date(t.data + 'T12:00:00');
-            const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
             const isIncome = t.tipo === 'receita';
-
-            // Determine Macro Category for coloring
             let cat = t.categoria || 'Outros';
             let macro = 'Outros';
-            if (isIncome) macro = 'Receitas';
-            else if (categorias['Essenciais']?.includes(cat)) macro = 'Essenciais';
-            else if (categorias['Estilo de Vida']?.includes(cat)) macro = 'Estilo de Vida';
-            else if (categorias['Investimentos']?.includes(cat)) macro = 'Investimentos';
 
-            const macroClass = macro.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-');
-            const subName = t.subcategoria || t.categoria || 'Geral';
+            if (isIncome) {
+                macro = 'Receitas';
+            } else if (categorias['Essenciais']?.includes(cat)) {
+                macro = 'Essenciais';
+            } else if (categorias['Estilo de Vida']?.includes(cat)) {
+                macro = 'Estilo de Vida';
+            } else if (categorias['Investimentos']?.includes(cat)) {
+                macro = 'Investimentos';
+            }
 
-            const statusBadge = t.pendente
-                ? `<div class="status-badge pend" onclick="FC.togglePaid('${t.id}')">⏳ Pendente</div>`
-                : `<div class="status-badge paid" onclick="FC.togglePaid('${t.id}')">✅ Pago</div>`;
+            macros[macro].items.push(t);
+        });
 
-            const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
+        // Generate Board
+        const macroOrder = ['Receitas', 'Essenciais', 'Estilo de Vida', 'Investimentos', 'Outros'];
+
+        macroOrder.forEach(mName => {
+            const mItems = macros[mName].items;
+            if (mItems.length === 0) return;
 
             html += `
-                <div class="list-item" data-id="${t.id}">
-                    <div class="list-item-header">
-                        <div class="item-tags">
-                            <span class="item-tag ${macroClass}">${macro}</span>
-                            <span class="item-tag subcat">${subName}</span>
-                        </div>
-                        <div class="item-actions">
-                            <button onclick="FC.editEntry('${t.id}')" class="btn-act" title="Editar">✏️</button>
-                            ${statusBadge}
-                        </div>
-                    </div>
-                    
-                    <div class="item-title-row">
-                        <div class="item-desc">${t.descricao} <span class="ri-icon-sm">${quemIcon}</span></div>
-                    </div>
+            <div class="excel-category-block">
+                <div class="excel-category-header ${mName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-')}">${mName.toUpperCase()}</div>
+                <div class="excel-columns-container">
+            `;
 
-                    <div class="list-item-footer">
-                        <span class="item-date">${dateStr}</span>
-                        <div class="item-val ${isIncome ? 'income' : 'expense'}">${fmt(t.valor)}</div>
+            // Group by Subcategory within Macro
+            const subcats = {};
+            mItems.forEach(t => {
+                const sName = t.subcategoria || t.categoria || 'Geral';
+                if (!subcats[sName]) subcats[sName] = [];
+                subcats[sName].push(t);
+            });
+
+            // Iterate subcats
+            Object.keys(subcats).sort().forEach(sName => {
+                const sItems = subcats[sName];
+                let totPaid = 0;
+                let totPending = 0;
+
+                html += `
+                    <div class="excel-column">
+                        <div class="excel-col-header">${sName.toUpperCase()}</div>
+                        <div class="excel-items-list">
+                `;
+
+                sItems.forEach(t => {
+                    const d = new Date(t.data + 'T12:00:00');
+                    const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                    const statusClass = t.pendente ? 'pending' : 'paid';
+
+                    if (t.pendente) totPending += t.valor;
+                    else totPaid += t.valor;
+
+                    const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
+
+                    html += `
+                            <div class="excel-item ${statusClass}" data-id="${t.id}" onclick="FC.editEntry('${t.id}')">
+                                <div class="e-desc">${t.descricao} <span style="font-size:0.7rem">${quemIcon} ${dateStr}</span></div>
+                                <div class="e-right">
+                                    <span class="e-val">${fmt(t.valor)}</span>
+                                    <button class="e-check" onclick="event.stopPropagation(); FC.togglePaid('${t.id}')">${t.pendente ? '⏳' : '✅'}</button>
+                                </div>
+                            </div>
+                    `;
+                });
+
+                html += `
+                        </div>
+                        <div class="excel-subcat-totals">
+                            <div class="tot-row pending"><span>Falta:</span> <span>${fmt(totPending)}</span></div>
+                            <div class="tot-row paid"><span>Pago:</span> <span>${fmt(totPaid)}</span></div>
+                        </div>
                     </div>
+                `;
+            });
+
+            html += `
                 </div>
+            </div>
             `;
         });
 
+        html += '</div>';
         list.innerHTML = html;
     }
 

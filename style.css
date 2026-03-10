@@ -1331,6 +1331,211 @@ select {
     background: rgba(239, 68, 68, 0.2);
 }
 
+/* ===== EXCEL-STYLE BOARD LAYOUT ===== */
+.excel-board {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding-bottom: 24px;
+}
+
+.excel-category-block {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.excel-category-header {
+    background: var(--bg3);
+    color: var(--text);
+    font-weight: 800;
+    font-size: 1.1rem;
+    padding: 12px 16px;
+    border-bottom: 2px solid var(--border);
+    letter-spacing: 0.5px;
+}
+
+/* Cores por Categoria (Macro) */
+.excel-category-header.essenciais {
+    border-bottom-color: #f59e0b;
+}
+
+.excel-category-header.estilo-de-vida {
+    border-bottom-color: #8b5cf6;
+}
+
+.excel-category-header.investimentos {
+    border-bottom-color: #10b981;
+}
+
+.excel-category-header.receitas {
+    border-bottom-color: #3b82f6;
+}
+
+.excel-columns-container {
+    display: flex;
+    overflow-x: auto;
+    padding: 12px;
+    gap: 16px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+}
+
+.excel-columns-container::-webkit-scrollbar {
+    height: 6px;
+}
+
+.excel-columns-container::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+.excel-column {
+    flex: 0 0 260px;
+    /* Largura fixa da coluna tipo Trello/Planilha */
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    scroll-snap-align: start;
+}
+
+.excel-col-header {
+    background: rgba(13, 148, 136, 0.05);
+    /* Leve tom de accent */
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 8px 12px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    letter-spacing: 0.5px;
+}
+
+.excel-items-list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.excel-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: 0.2s;
+    font-size: 0.85rem;
+}
+
+.excel-item:last-child {
+    border-bottom: none;
+}
+
+.excel-item:hover {
+    filter: brightness(1.05);
+}
+
+/* Status Colors (Fundo Leve com borda forte) */
+.excel-item.pending {
+    background: rgba(239, 68, 68, 0.05);
+    border-left: 3px solid #ef4444;
+    /* Vermelho */
+}
+
+.excel-item.paid {
+    background: rgba(16, 185, 129, 0.05);
+    border-left: 3px solid #10b981;
+    /* Verde */
+}
+
+.e-desc {
+    display: flex;
+    flex-direction: column;
+    font-weight: 500;
+    color: var(--text);
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.e-desc span {
+    color: var(--text3);
+    margin-top: 2px;
+}
+
+.e-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.e-val {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.e-check {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.e-check:hover {
+    transform: scale(1.1);
+}
+
+.excel-subcat-totals {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 8px 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.tot-row {
+    display: flex;
+    justify-content: space-between;
+}
+
+.tot-row.pending {
+    color: #ef4444;
+}
+
+.tot-row.paid {
+    color: #10b981;
+}
+
+@media (min-width: 768px) {
+    .excel-columns-container {
+        flex-wrap: wrap;
+        /* No desktop elas quebram a linha pra preencher o GRID do Category Block */
+        overflow-x: visible;
+        scroll-snap-type: none;
+    }
+
+    .excel-column {
+        flex: 1 1 260px;
+        /* Cresce preenchendo o grid Desktop */
+    }
+}
+
 /* ===== CONFIG PAGE ===== */
 .config-scroll {
     padding: 16px;
