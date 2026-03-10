@@ -181,6 +181,17 @@
             $('barInvestimentos').style.width = `${percInvest}%`;
         }
 
+        // Renderizar pills de subcategorias
+        if ($('pillsEssenciais')) {
+            $('pillsEssenciais').innerHTML = (categorias['Essenciais'] || []).map(s => `<span class="subcat-pill">${s}</span>`).join('');
+        }
+        if ($('pillsEstiloVida')) {
+            $('pillsEstiloVida').innerHTML = (categorias['Estilo de Vida'] || []).map(s => `<span class="subcat-pill">${s}</span>`).join('');
+        }
+        if ($('pillsInvestimentos')) {
+            $('pillsInvestimentos').innerHTML = (categorias['Investimentos'] || []).map(s => `<span class="subcat-pill">${s}</span>`).join('');
+        }
+
         $('dashSaldoLivre').textContent = fmt(saldoLivre);
         if (saldoLivre < 0) {
             $('dashSaldoLivre').style.color = '#ef5350';

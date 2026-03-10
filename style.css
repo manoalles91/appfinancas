@@ -1731,6 +1731,24 @@ select {
     /* Light Green (for growth) */
 }
 
+/* Subcategory Pills under Progress Bars */
+.subcat-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.subcat-pill {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    white-space: nowrap;
+}
+
 /* List Tabs */
 .list-tabs {
     display: flex;
