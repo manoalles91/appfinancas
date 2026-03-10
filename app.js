@@ -233,27 +233,119 @@
         if (sorted.length === 0) { list.innerHTML = ''; empty.style.display = 'block'; return; }
         empty.style.display = 'none';
 
-        list.innerHTML = sorted.map(t => {
-            const d = new Date(t.data + 'T12:00:00');
-            const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-            const isIncome = t.tipo === 'receita';
-            const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
-            const pending = t.pendente ? '<span class="ri-pending">A PAGAR</span>' : '<span class="ri-liquidado">PAGO</span>';
-            return `<div class="recent-item" data-id="${t.id}">
-                <span class="ri-icon">${quemIcon}</span>
-                <div class="ri-info"><span class="ri-desc">${t.descricao}${pending}</span><span class="ri-meta">${dateStr} • ${t.subcategoria || t.categoria}</span></div>
-                <span class="ri-val ${isIncome ? 'income' : 'expense'}">${isIncome ? '+' : '-'}${fmt(t.valor)}</span>
-                <div class="ri-actions">
-                    ${t.pendente ? `<button onclick="FC.markPaid('${t.id}')" title="Marcar pago">✅</button>` : `<button onclick="FC.markUnpaid('${t.id}')" title="Marcar pendente">⏳</button>`}
-                    <button onclick="FC.editEntry('${t.id}')" title="Editar">✏️</button>
-                    <button onclick="FC.deleteEntry('${t.id}')" title="Excluir">🗑️</button>
-                </div>
-            </div>`;
-        }).join('');
+        // BOARD GROUPING
+        // 1. Group by category
+        const groups = {
+            'Receitas': {},
+            'Essenciais': {},
+            'Estilo de Vida': {},
+            'Investimentos': {}
+        };
+
+        sorted.forEach(t => {
+            let cat = t.categoria || 'Outros';
+            let macro = 'Outros';
+
+            if (t.tipo === 'receita') {
+                macro = 'Receitas';
+            } else if (categorias['Essenciais']?.includes(cat)) {
+                macro = 'Essenciais';
+            } else if (categorias['Estilo de Vida']?.includes(cat)) {
+                macro = 'Estilo de Vida';
+            } else if (categorias['Investimentos']?.includes(cat)) {
+                macro = 'Investimentos';
+            } else {
+                macro = 'Outros';
+                if (!groups[macro]) groups[macro] = {};
+            }
+
+            const sub = t.subcategoria || t.categoria || 'Geral';
+            if (!groups[macro][sub]) groups[macro][sub] = [];
+            groups[macro][sub].push(t);
+        });
+
+        let html = '';
+
+        for (const [macro, subs] of Object.entries(groups)) {
+            if (!subs) continue;
+            const subKeys = Object.keys(subs);
+            if (subKeys.length === 0) continue;
+
+            const macroClass = macro.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-');
+
+            // Calcula total macro
+            let totalMacro = 0;
+            subKeys.forEach(s => subs[s].forEach(t => totalMacro += t.valor));
+
+            html += `<div class="board-category ${macroClass}">
+                        <div class="board-cat-header">
+                            <h3>${macro.toUpperCase()}</h3>
+                            <span>${fmt(totalMacro)}</span>
+                        </div>
+                        <div class="board-subcat-row">`;
+
+            for (const sub of subKeys) {
+                // Calcula total sub
+                let totalSub = subs[sub].reduce((acc, t) => acc + t.valor, 0);
+
+                html += `<div class="board-subcat-col">
+                            <div class="board-col-header">
+                                <h4>${sub.toUpperCase()}</h4>
+                                <span>${fmt(totalSub)}</span>
+                            </div>
+                            <div class="board-col-items">`;
+
+                subs[sub].forEach(t => {
+                    const d = new Date(t.data + 'T12:00:00');
+                    const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                    const isIncome = t.tipo === 'receita';
+
+                    const btnHtml = t.pendente
+                        ? `<button class="board-check pend" onclick="FC.togglePaid('${t.id}')" title="Marcar pago">⏳</button>`
+                        : `<button class="board-check paid" onclick="FC.togglePaid('${t.id}')" title="Desfazer e marcar pendente">✅</button>`;
+
+                    const actionHtml = `<div class="board-acts">
+                                            <button onclick="FC.editEntry('${t.id}')" class="act-btn">✏️</button>
+                                          </div>`;
+
+                    const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
+
+                    html += `<div class="board-item ${t.pendente ? 'pendente' : 'liquidado'}" data-id="${t.id}">
+                                <div class="board-item-main">
+                                    <div class="board-item-title">${t.descricao} <span class="ri-icon-sm">${quemIcon}</span></div>
+                                    <div class="board-item-val ${isIncome ? 'income' : 'expense'}">${fmt(t.valor)}</div>
+                                </div>
+                                <div class="board-item-bottom">
+                                    <span class="board-item-date">${dateStr}</span>
+                                    ${actionHtml}
+                                    ${btnHtml}
+                                </div>
+                             </div>`;
+                });
+
+                html += `   </div>
+                         </div>`;
+            }
+
+            html += `   </div>
+                     </div>`;
+        }
+
+        list.innerHTML = html;
     }
 
     // Chart has been removed from new design, no need to draw.
     function drawChart() { return; }
+
+    FC.togglePaid = id => {
+        const t = transacoes.find(x => x.id === id);
+        if (t) {
+            t.pendente = !t.pendente;
+            saveAll();
+            refreshDashboard();
+            toast(t.pendente ? '⏳ Movido para pendentes!' : '✅ Marcado como pago!');
+        }
+    };
 
     FC.markPaid = id => {
         const t = transacoes.find(x => x.id === id);
