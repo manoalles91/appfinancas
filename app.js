@@ -378,16 +378,74 @@
     };
 
     FC.deleteEntry = id => {
+        const t = transacoes.find(x => x.id === id);
+        if (!t) return;
+
+        const isRecurring = (t.recorrencia === 'gerada' || t.recorrencia === 'fixa' || t.recorrencia === 'parcelada');
+
+        if (isRecurring) {
+            window.tempDeleteData = {
+                id,
+                descricao: t.descricao,
+                data: t.data,
+                baseDesc: t.recorrencia === 'parcelada' ? t.descricao.replace(/ \(\d+\/\d+\)$/, '') : t.descricao
+            };
+            $('modalRecDelete').classList.remove('hidden');
+            return;
+        }
+
         if (!confirm('Excluir lançamento?')) return;
-        transacoes = transacoes.filter(x => x.id !== id);
-        saveAll(); refreshDashboard(); toast('🗑️ Excluído');
-        supabase.from('transacoes').delete().eq('id', id).then();
+        executeDelete([id]);
     };
+
+    function executeDelete(ids) {
+        transacoes = transacoes.filter(x => !ids.includes(x.id));
+        saveAll();
+        refreshDashboard();
+        toast('🗑️ Excluído');
+
+        if (ids.length === 1) {
+            supabase.from('transacoes').delete().eq('id', ids[0]).then();
+        } else if (ids.length > 1) {
+            supabase.from('transacoes').delete().in('id', ids).then();
+        }
+    }
 
     FC.deleteCurrentEntry = () => {
         if (!editingId) return;
-        FC.deleteEntry(editingId);
+        const idToDel = editingId;
         FC.goTo('pageHome');
+        FC.deleteEntry(idToDel);
+    };
+
+    FC.confirmDeleteRec = choice => {
+        FC.closeModal('modalRecDelete');
+        const data = window.tempDeleteData;
+        if (!data) return;
+
+        let idsToDelete = [];
+
+        if (choice === 'onlyThis') {
+            idsToDelete.push(data.id);
+        } else if (choice === 'allFuture') {
+            const future = transacoes.filter(x => x.descricao.startsWith(data.baseDesc) && x.data >= data.data);
+            idsToDelete = future.map(x => x.id);
+
+            const parentFixa = transacoes.find(x => x.recorrencia === 'fixa' && x.descricao === data.descricao && x.data <= data.data);
+            if (parentFixa && !idsToDelete.includes(parentFixa.id)) {
+                parentFixa.recorrencia = 'unico';
+                supabase.from('transacoes').upsert({ id: parentFixa.id, recorrencia: 'unico' }).then();
+                saveAll();
+            }
+        } else if (choice === 'all') {
+            const all = transacoes.filter(x => x.descricao.startsWith(data.baseDesc));
+            idsToDelete = all.map(x => x.id);
+        }
+
+        if (idsToDelete.length > 0) {
+            executeDelete(idsToDelete);
+        }
+        window.tempDeleteData = null;
     };
 
     FC.confirmEditRec = choice => {
