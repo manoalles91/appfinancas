@@ -338,6 +338,7 @@
         // goTo pageNovo clears the form and editingId via resetForm(), so we must set editingId AFTER calling it!
         FC.goTo('pageNovo');
         editingId = id;
+        if ($('btnDeleteEntry')) $('btnDeleteEntry').classList.remove('hidden');
 
         $('novoTitle').textContent = 'Editar Lançamento';
         // Fill form
@@ -381,6 +382,12 @@
         transacoes = transacoes.filter(x => x.id !== id);
         saveAll(); refreshDashboard(); toast('🗑️ Excluído');
         supabase.from('transacoes').delete().eq('id', id).then();
+    };
+
+    FC.deleteCurrentEntry = () => {
+        if (!editingId) return;
+        FC.deleteEntry(editingId);
+        FC.goTo('pageHome');
     };
 
     FC.confirmEditRec = choice => {
@@ -604,6 +611,7 @@
     function resetForm() {
         editingId = null;
         $('novoTitle').textContent = 'Nova Despesa';
+        if ($('btnDeleteEntry')) $('btnDeleteEntry').classList.add('hidden');
         $('fDesc').value = '';
         $('fValor').value = '';
         $('fData').value = new Date().toISOString().split('T')[0];
@@ -621,7 +629,21 @@
 
     function fillCategorias(selectedCat) {
         const sel = $('fCategoria');
-        sel.innerHTML = Object.keys(categorias).map(c => `<option value="${c}" ${c === selectedCat ? 'selected' : ''}>${c}</option>`).join('');
+        const tipo = document.querySelector('.tipo-btn.active')?.dataset.t || 'despesa';
+
+        // Garante que "Receitas" exista na inicialização
+        if (!categorias['Receitas']) {
+            categorias['Receitas'] = ['Salário', 'Rendimentos', 'Vendas', 'Cashback', 'Outros'];
+        }
+
+        let catsObj = Object.keys(categorias);
+        if (tipo === 'receita') {
+            catsObj = ['Receitas', 'Outros'];
+        } else {
+            catsObj = catsObj.filter(c => c !== 'Receitas');
+        }
+
+        sel.innerHTML = catsObj.map(c => `<option value="${c}" ${c === selectedCat ? 'selected' : ''}>${c}</option>`).join('');
         fillSubcategorias();
     }
 
@@ -909,6 +931,7 @@
             b.classList.add('active');
             $('novoTitle').textContent = b.dataset.t === 'receita' ? 'Nova Receita' : 'Nova Despesa';
             if (b.dataset.t === 'receita') $('fDestino').value = 'Receitas';
+            fillCategorias();
         }));
 
         // Form: quem toggle
