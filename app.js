@@ -355,9 +355,18 @@
             const mItems = macros[mName].items;
             if (mItems.length === 0) return;
 
+            // Calculate percentage for macro header
+            let macroGasto = mItems.filter(t => t.tipo === 'despesa').reduce((s, t) => s + t.valor, 0);
+            let teto = 0;
+            if (mName === 'Essenciais') teto = (receitasTotal * 0.50) || 2000;
+            if (mName === 'Estilo de Vida') teto = (receitasTotal * 0.30) || 1000;
+            if (mName === 'Investimentos') teto = (receitasTotal * 0.20) || 500;
+            
+            const percStr = teto > 0 ? ` <span class="header-perc">${Math.min((macroGasto/teto)*100, 100).toFixed(0)}%</span>` : '';
+
             html += `
             <div class="excel-category-block">
-                <div class="excel-category-header ${mName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-')}">${mName.toUpperCase()}</div>
+                <div class="excel-category-header ${mName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-')}">${mName.toUpperCase()}${percStr}</div>
                 <div class="excel-columns-container">
             `;
 
@@ -374,6 +383,8 @@
                 const sItems = subcats[sName];
                 let totPaid = 0;
                 let totPending = 0;
+                let totGeral = 0;
+                let hasNonCard = false;
 
                 html += `
                     <div class="excel-column">
@@ -382,14 +393,14 @@
                 `;
 
                 sItems.forEach(t => {
-                    const d = new Date(t.data + 'T12:00:00');
-                    const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                     const statusClass = t.pendente ? 'pending' : 'paid';
-
-                    if (t.pendente) totPending += t.valor;
-                    else totPaid += t.valor;
-
-                    const quemIcon = t.quem === 'Eu' ? '👤' : t.quem === 'Esposa' ? '👩' : '🏠';
+                    totGeral += t.valor;
+                    
+                    if (!t.cartao) {
+                        hasNonCard = true;
+                        if (t.pendente) totPending += t.valor;
+                        else totPaid += t.valor;
+                    }
 
                     html += `
                             <div class="excel-item ${statusClass}" data-id="${t.id}" onclick="FC.togglePaid('${t.id}')">
@@ -401,11 +412,16 @@
                     `;
                 });
 
+                const statusRows = hasNonCard ? `
+                    <div class="tot-row pending"><span>Falta:</span> <span>${fmt(totPending)}</span></div>
+                    <div class="tot-row paid"><span>Pago:</span> <span>${fmt(totPaid)}</span></div>
+                ` : '';
+
                 html += `
                         </div>
                         <div class="excel-subcat-totals">
-                            <div class="tot-row pending"><span>Falta:</span> <span>${fmt(totPending)}</span></div>
-                            <div class="tot-row paid"><span>Pago:</span> <span>${fmt(totPaid)}</span></div>
+                            <div class="tot-row subtotal"><span>Subtotal:</span> <span>${fmt(totGeral)}</span></div>
+                            ${statusRows}
                         </div>
                     </div>
                 `;
@@ -486,7 +502,7 @@
         setTimeout(() => {
             if (t.subcategoria) $('fSubcategoria').value = t.subcategoria;
             if (t.cartao) $('fCartao').value = t.cartao;
-            toggleCartaoFields();
+            toggleCartaoFields(); // Will update lblfData and fFatura
         }, 50);
     };
 
@@ -800,6 +816,7 @@
         $('lblRecorrencia').textContent = 'Não recorrente ▸';
         fillCategorias();
         fillCartaoSelect();
+        if ($('lblfData')) $('lblfData').textContent = 'Data do lançamento';
     }
 
     function fillCategorias(selectedCat) {
@@ -836,7 +853,21 @@
 
     function toggleCartaoFields() {
         const dest = $('fDestino').value;
-        $('cartaoFields').classList.toggle('hidden', dest !== 'Cartoes');
+        const isCard = dest === 'Cartoes';
+        $('cartaoFields').classList.toggle('hidden', !isCard);
+        if ($('lblfData')) {
+            $('lblfData').textContent = isCard ? 'Mês da Fatura' : 'Data do lançamento';
+        }
+        updateFaturaLabel();
+    }
+
+    function updateFaturaLabel() {
+        const dStr = $('fData').value;
+        if (!dStr) return;
+        const d = new Date(dStr + 'T12:00:00');
+        if ($('fFatura')) {
+            $('fFatura').textContent = `${MESES[d.getMonth()]}, ${d.getFullYear()}`;
+        }
     }
 
     function saveEntry() {
@@ -1120,6 +1151,7 @@
 
         // Form: valor mask
         $('fValor').addEventListener('input', function () { formatInput(this); });
+        $('fData').addEventListener('change', updateFaturaLabel);
 
         // Form: recorrência
         $('rowRecorrencia').addEventListener('click', () => $('panelRecorrencia').classList.toggle('hidden'));
