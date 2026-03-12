@@ -139,6 +139,8 @@
     --esposa: #e11d48;
     --comum: #f59e0b;
     --blue: #3b82f6;
+    --pink: #ec4899;
+    --indigo: #6366f1;
     --shadow: 0 2px 12px rgba(0, 0, 0, .06);
     --radius: 16px;
     --radius-sm: 10px;
@@ -2274,9 +2276,23 @@ select {
         background: #2196F3;
     }
 
+    .item-tag.compromissos {
+        background: #9e9e9e;
+    }
+
+    .item-tag.filhos {
+        background: var(--pink);
+    }
+
     .item-tag.outros {
         background: #9e9e9e;
     }
+
+    .progress-fill.essenciais { background: #FFCA28; }
+    .progress-fill.estilo-vida { background: #ce93d8; }
+    .progress-fill.investimentos { background: #81c784; }
+    .progress-fill.filhos { background: var(--pink); }
+    .progress-fill.compromissos { background: #94a3b8; }
 
     .item-tag.subcat {
         background: rgba(255, 255, 255, 0.1);

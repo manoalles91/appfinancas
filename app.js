@@ -35,9 +35,12 @@
     let cartoes = [];
     let config = { limite: 3000, webhookUrl: '' };
     let categorias = {
-        'Essenciais': ['Moradia', 'Luz', 'Água', 'Internet', 'Alimentação', 'Transporte', 'Saúde'],
-        'Estilo de Vida': ['Lazer', 'Streaming', 'Vestuário', 'Pet', 'Educação', 'Doações/Presentes', 'Padaria', 'iFood'],
-        'Investimentos': ['Poupança', 'Renda Fixa', 'Ações', 'Crypto', 'Previdência']
+        "Receitas": ["Salário", "Rendimentos", "Vendas", "Cashback", "Outros"],
+        "Essenciais": ["Moradia", "Alimentação Básica", "Educação", "Saúde", "Transporte", "Vestuário (Essencial)", "Pets (Essencial)"],
+        "Estilo de Vida": ["Alimentação Fora", "Vestuário (Estilo)", "Lazer", "Cuidados Pessoais", "Pets (Mimos)"],
+        "Filhos": ["Essencial Infantil", "Estilo de Vida Infantil"],
+        "Compromissos": ["Dívidas e Empréstimos", "Impostos e Tarifas"],
+        "Investimentos": ["Reserva de Emergência", "Renda Fixa", "Renda Variável", "Previdência Privada"]
     };
     let currentMonth = new Date().getMonth();
     let currentYear = new Date().getFullYear();
@@ -141,67 +144,48 @@
         // 4. Saldo Livre Projetado
         const saldoLivre = receitasTotal - despesasTotal;
 
-        // 5. Categorias: Essenciais, Estilo de Vida e Investimentos
-        let essencialGasto = 0, estiloGasto = 0, investGasto = 0;
+        // 5. Categorias Dinâmicas
+        const dashContainer = $('dashboardProgress');
+        if (dashContainer) {
+            let html = '';
+            const meta = {
+                'Essenciais': { icon: '🏠', color: 'essenciais', tetoPerc: 0.50 },
+                'Estilo de Vida': { icon: '🍕', color: 'estilo-vida', tetoPerc: 0.15 },
+                'Filhos': { icon: '👶', color: 'filhos', tetoPerc: 0.15 },
+                'Compromissos': { icon: '📑', color: 'compromissos', tetoPerc: 0.10 },
+                'Investimentos': { icon: '📈', color: 'investimentos', tetoPerc: 0.10 }
+            };
 
-        txs.filter(t => t.tipo === 'despesa').forEach(t => {
-            const cat = t.categoria || '';
-            if (cat === 'Essenciais' || categorias['Essenciais']?.includes(cat)) {
-                essencialGasto += t.valor;
-            } else if (cat === 'Estilo de Vida' || categorias['Estilo de Vida']?.includes(cat)) {
-                estiloGasto += t.valor;
-            } else if (cat === 'Investimentos' || categorias['Investimentos']?.includes(cat)) {
-                investGasto += t.valor;
-            }
-        });
+            const catsTotals = {};
+            txs.filter(t => t.tipo === 'despesa').forEach(t => {
+                const c = t.categoria || 'Geral';
+                catsTotals[c] = (catsTotals[c] || 0) + t.valor;
+            });
 
-        // Definindo "Teto" provisório baseado na renda para simular o progresso do gráfico
-        // Exemplo: 50% Essenciais, 30% Estilo de Vida, 20% Investimentos
-        const tetoEssenciais = receitasTotal > 0 ? receitasTotal * 0.50 : 2000;
-        const tetoEstilo = receitasTotal > 0 ? receitasTotal * 0.30 : 1000;
-        const tetoInvest = receitasTotal > 0 ? receitasTotal * 0.20 : 500;
+            Object.keys(categorias).filter(c => c !== 'Receitas').forEach(c => {
+                const info = meta[c] || { icon: '📦', color: 'investimentos', tetoPerc: 0.10 };
+                const gasto = catsTotals[c] || 0;
+                const teto = receitasTotal > 0 ? receitasTotal * info.tetoPerc : 1000;
+                const perc = teto > 0 ? Math.min((gasto / teto) * 100, 100) : 0;
+                
+                const pills = (categorias[c] || []).map(sub => {
+                    const subGasto = txs.filter(t => t.categoria === c && t.subcategoria === sub).reduce((s,tx)=>s+tx.valor,0);
+                    return subGasto > 0 ? `<span class="subcat-pill">${sub} <strong>${fmt(subGasto)}</strong></span>` : '';
+                }).join('');
 
-        const percEssenciais = tetoEssenciais > 0 ? Math.min((essencialGasto / tetoEssenciais) * 100, 100) : 0;
-        const percEstilo = tetoEstilo > 0 ? Math.min((estiloGasto / tetoEstilo) * 100, 100) : 0;
-        const percInvest = tetoInvest > 0 ? Math.min((investGasto / tetoInvest) * 100, 100) : 0;
-
-        // Atualizar HTML - Topological
-        $('dashReceitas').textContent = fmt(receitasPagas);
-
-        $('valEssenciais').textContent = `${fmt(essencialGasto)} / ${fmt(tetoEssenciais)}`;
-        $('lblEssenciais').textContent = `${percEssenciais.toFixed(0)}%`;
-        $('barEssenciais').style.width = `${percEssenciais}%`;
-
-        $('valEstiloVida').textContent = `${fmt(estiloGasto)} / ${fmt(tetoEstilo)}`;
-        $('lblEstiloVida').textContent = `${percEstilo.toFixed(0)}%`;
-        $('barEstiloVida').style.width = `${percEstilo}%`;
-
-        if ($('valInvestimentos')) {
-            $('valInvestimentos').textContent = `${fmt(investGasto)} / ${fmt(tetoInvest)}`;
-            $('lblInvestimentos').textContent = `${percInvest.toFixed(0)}%`;
-            $('barInvestimentos').style.width = `${percInvest}%`;
-        }
-
-        // Renderizar pills de subcategorias
-        const catsTotals = {};
-        txs.filter(t => t.tipo === 'despesa').forEach(t => {
-            const c = t.categoria || 'Geral';
-            catsTotals[c] = (catsTotals[c] || 0) + t.valor;
-        });
-
-        const renderPill = (catName) => {
-            const total = catsTotals[catName] || 0;
-            return total > 0 ? `<span class="subcat-pill">${catName} <strong>${fmt(total)}</strong></span>` : '';
-        };
-
-        if ($('pillsEssenciais')) {
-            $('pillsEssenciais').innerHTML = (categorias['Essenciais'] || []).map(renderPill).join('');
-        }
-        if ($('pillsEstiloVida')) {
-            $('pillsEstiloVida').innerHTML = (categorias['Estilo de Vida'] || []).map(renderPill).join('');
-        }
-        if ($('pillsInvestimentos')) {
-            $('pillsInvestimentos').innerHTML = (categorias['Investimentos'] || []).map(renderPill).join('');
+                html += `
+                <div class="progress-item" onclick="FC.showCategoryBreakdown('${c}')" style="cursor:pointer">
+                    <div class="progress-labels">
+                        <span>${info.icon} ${c} <span>${perc.toFixed(0)}%</span></span>
+                        <span>${fmt(gasto)} / ${fmt(teto)}</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill ${info.color}" style="width: ${perc}%"></div>
+                    </div>
+                    <div class="subcat-pills">${pills}</div>
+                </div>`;
+            });
+            dashContainer.innerHTML = html;
         }
 
         $('dashSaldoLivre').textContent = fmt(saldoLivre);
