@@ -149,8 +149,10 @@
 
         // 5. Categorias Dinâmicas
         const dashContainer = $('dashboardProgress');
+        const incomeContainer = $('incomeProgress');
         if (dashContainer) {
-            let html = '';
+            let expHtml = '';
+            let incHtml = '';
             const meta = {
                 'Receitas': { icon: '💰', color: 'receitas', tetoPerc: 1.0, isIncome: true },
                 'Essenciais': { icon: '🏠', color: 'essenciais', tetoPerc: 0.50 },
@@ -176,12 +178,14 @@
                 
                 let teto, perc, subTotalLabel;
                 if (info.isIncome) {
-                    teto = valorAtual; // Total planned income
+                    // Se houver limite customizado para Receita, usamos ele como "Meta"
+                    teto = config.limites && config.limites[c] ? config.limites[c] : valorAtual;
                     const pago = catsPagas[c] || 0;
                     perc = teto > 0 ? Math.min((pago / teto) * 100, 100) : 0;
                     subTotalLabel = `${fmt(pago)} recebido`;
                 } else {
-                    teto = receitasTotal > 0 ? receitasTotal * info.tetoPerc : 1000;
+                    // Usar limite customizado se existir, caso contrário calculada
+                    teto = (config.limites && config.limites[c]) ? config.limites[c] : (receitasTotal > 0 ? receitasTotal * info.tetoPerc : 1000);
                     perc = teto > 0 ? Math.min((valorAtual / teto) * 100, 100) : 0;
                     subTotalLabel = `${fmt(valorAtual)} / ${fmt(teto)}`;
                 }
@@ -191,7 +195,7 @@
                     return subGasto > 0 ? `<span class="subcat-pill">${sub} <strong>${fmt(subGasto)}</strong></span>` : '';
                 }).join('');
 
-                html += `
+                const itemHtml = `
                 <div class="progress-item" onclick="FC.showCategoryBreakdown('${c}')" style="cursor:pointer">
                     <div class="progress-labels">
                         <span>${info.icon} ${c} <span>${perc.toFixed(0)}%</span></span>
@@ -202,8 +206,12 @@
                     </div>
                     <div class="subcat-pills">${pills}</div>
                 </div>`;
+
+                if (info.isIncome) incHtml += itemHtml;
+                else expHtml += itemHtml;
             });
-            dashContainer.innerHTML = html;
+            dashContainer.innerHTML = expHtml;
+            if (incomeContainer) incomeContainer.innerHTML = incHtml;
         }
 
         $('dashSaldoLivre').textContent = fmt(saldoLivre);
@@ -1229,6 +1237,8 @@
             saveAll(); toast('✅ Webhook salvo');
         });
 
+        refreshLimitesConfig();
+
         // Config: sub cat filter
         $('cfgCatFilter').addEventListener('change', refreshSubcatList);
 
@@ -1322,6 +1332,40 @@
         fillCartaoSelect();
         refreshDashboard();
     }
+
+    function refreshLimitesConfig() {
+        const container = $('configLimites');
+        if (!container) return;
+        if (!config.limites) config.limites = {};
+        
+        let html = '';
+        Object.keys(categorias).forEach(c => {
+            const val = config.limites[c] || '';
+            html += `
+            <div class="sub-row">
+                <label>${c}</label>
+                <div style="display:flex;gap:5px;align-items:center;">
+                    <input type="text" class="input-mini f-limit" data-c="${c}" value="${val ? fmt(val).replace('R$ ','') : ''}" placeholder="0,00" inputmode="decimal">
+                    <button class="btn-sm" onclick="FC.saveLimite('${c}', this.previousElementSibling.value)">Salvar</button>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+
+        // Apply masking to inputs
+        container.querySelectorAll('.f-limit').forEach(input => {
+            input.addEventListener('input', function() { formatInput(this); });
+        });
+    }
+
+    FC.saveLimite = (cat, rawVal) => {
+        if (!config.limites) config.limites = {};
+        const val = parseValor(rawVal);
+        config.limites[cat] = val;
+        saveAll();
+        toast(`✅ Limite de ${cat} atualizado`);
+        refreshDashboard();
+    };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initCloud);
     else initCloud();

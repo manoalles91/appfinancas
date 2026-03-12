@@ -16,8 +16,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=11">
-    <script src="app.js?v=11" defer></script>
+    <link rel="stylesheet" href="style.css?v=12">
+    <script src="app.js?v=12" defer></script>
 </head>
 
 <body>
@@ -71,6 +71,12 @@
                         <span>Receitas do Mês (Pagas)</span>
                         <strong id="dashReceitas">R$ 0,00</strong>
                     </div>
+
+                    <div id="incomeProgress" class="progress-section no-margin-top">
+                        <!-- Gerado Dinamicamente -->
+                    </div>
+
+                    <div class="summary-divider"></div>
 
                     <!-- Progress Bars -->
                     <div class="progress-section" id="dashboardProgress">
@@ -363,6 +369,14 @@
                             inputmode="decimal"><button class="btn-sm" id="btnSaveLimite">Salvar</button></div>
                 </div>
 
+                <div class="config-card">
+                    <h3>📊 Limites por Categoria</h3>
+                    <p class="config-desc">Defina o teto mensal para cada categoria.</p>
+                    <div id="configLimites" class="limites-config-list">
+                        <!-- Gerado dinamicamente -->
+                    </div>
+                </div>
+
                 <!-- Webhook -->
                 <div class="config-section">
                     <h3 class="cfg-title">🔗 Webhook n8n</h3>
@@ -536,7 +550,7 @@
 
     <!-- App Logic -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=11"></script>
+    <script src="app.js?v=12"></script>
 </body>
 
 </html>

@@ -2295,6 +2295,32 @@ select {
     .progress-fill.compromissos { background: #94a3b8; }
     .progress-fill.receitas { background: #4caf50; }
 
+    .no-margin-top {
+        margin-top: 0 !important;
+    }
+
+    .summary-divider {
+        height: 1px;
+        background: rgba(255, 255, 255, 0.1);
+        margin: 15px 0;
+    }
+
+    .limites-config-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 10px;
+    }
+
+    .limites-config-list .sub-row {
+        background: rgba(255, 255, 255, 0.03);
+        padding: 10px;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
     .input-display {
         padding: 5px 12px;
         background: rgba(255, 255, 255, 0.05);
