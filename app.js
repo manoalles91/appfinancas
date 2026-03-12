@@ -22,7 +22,7 @@
     }
 
     // ===== SUPABASE CONFIG =====
-    const supabaseUrl = 'https://nwdzrntbmiwaauauwgpga.supabase.co';
+    const supabaseUrl = 'https://nwdzrntbmiwaauauwpga.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53ZHpybnRibWl3YWF1YXV3cGdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNjI2OTksImV4cCI6MjA4ODYzODY5OX0.7Mr3jd_Rz_Cp-ADi54z26B4ESxItsyQ05DIJLEqjfNc';
     const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
@@ -145,11 +145,12 @@
         let essencialGasto = 0, estiloGasto = 0, investGasto = 0;
 
         txs.filter(t => t.tipo === 'despesa').forEach(t => {
-            if (categorias['Essenciais']?.includes(t.categoria)) {
+            const cat = t.categoria || '';
+            if (cat === 'Essenciais' || categorias['Essenciais']?.includes(cat)) {
                 essencialGasto += t.valor;
-            } else if (categorias['Estilo de Vida']?.includes(t.categoria)) {
+            } else if (cat === 'Estilo de Vida' || categorias['Estilo de Vida']?.includes(cat)) {
                 estiloGasto += t.valor;
-            } else if (categorias['Investimentos']?.includes(t.categoria)) {
+            } else if (cat === 'Investimentos' || categorias['Investimentos']?.includes(cat)) {
                 investGasto += t.valor;
             }
         });
@@ -208,6 +209,38 @@
             $('dashSaldoLivre').style.color = '#ef5350';
         } else {
             $('dashSaldoLivre').style.color = '#a5d6a7';
+        }
+
+        // Card Chart
+        if ($('cardChartContainer') && cartoes.length > 0) {
+            let chartHtml = '';
+            let totalCartoes = 0;
+            const colors = ['#8b5cf6', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#06b6d4'];
+            cartoes.forEach((c, i) => {
+                const gastoCartao = txs.filter(t => t.cartao === c.nome && t.tipo === 'despesa')
+                    .reduce((s, t) => s + t.valor, 0);
+                totalCartoes += gastoCartao;
+                const perc = c.limite > 0 ? Math.min(Math.round(gastoCartao / c.limite * 100), 100) : 0;
+                const color = colors[i % colors.length];
+                chartHtml += `
+                    <div class="card-chart-item">
+                        <div class="cc-chart-label">
+                            <span class="cc-chart-dot" style="background:${color}"></span>
+                            <span>${c.nome}</span>
+                            <span class="cc-chart-val">${fmt(gastoCartao)}</span>
+                        </div>
+                        <div class="cc-chart-track">
+                            <div class="cc-chart-fill" style="width:${perc}%;background:${color}"></div>
+                        </div>
+                        <div class="cc-chart-meta">${perc}% do limite (${fmt(c.limite)}) · Fatura vence dia ${String(c.vencimento || 10).padStart(2,'0')}</div>
+                    </div>
+                `;
+            });
+            chartHtml += `<div class="cc-chart-total"><span>Total Cartões</span><strong>${fmt(totalCartoes)}</strong></div>`;
+            $('cardChartContainer').innerHTML = chartHtml;
+            $('cardChartSection').classList.remove('hidden');
+        } else if ($('cardChartSection')) {
+            $('cardChartSection').classList.add('hidden');
         }
 
         // Pending Alert Box
@@ -274,11 +307,11 @@
 
             if (isIncome) {
                 macro = 'Receitas';
-            } else if (categorias['Essenciais']?.includes(cat)) {
+            } else if (cat === 'Essenciais' || categorias['Essenciais']?.includes(cat)) {
                 macro = 'Essenciais';
-            } else if (categorias['Estilo de Vida']?.includes(cat)) {
+            } else if (cat === 'Estilo de Vida' || categorias['Estilo de Vida']?.includes(cat)) {
                 macro = 'Estilo de Vida';
-            } else if (categorias['Investimentos']?.includes(cat)) {
+            } else if (cat === 'Investimentos' || categorias['Investimentos']?.includes(cat)) {
                 macro = 'Investimentos';
             }
 
@@ -397,7 +430,7 @@
         $('fDesc').value = t.descricao;
         $('fValor').value = t.valor.toFixed(2).replace('.', ',');
         $('fData').value = t.data;
-        $('fPendente').checked = t.pendente || false;
+        $('fEfetivado').checked = !t.pendente;
         if (t.destino) $('fDestino').value = t.destino;
 
         // Recurrence UI sync
@@ -726,10 +759,11 @@
         $('fDesc').value = '';
         $('fValor').value = '';
         $('fData').value = new Date().toISOString().split('T')[0];
-        $('fPendente').checked = false;
+        $('fEfetivado').checked = false;
         $$('.tipo-btn').forEach(b => b.classList.toggle('active', b.dataset.t === 'despesa'));
         $$('.quem-btn').forEach(b => b.classList.toggle('active', b.dataset.q === 'Eu'));
         $$('input[name="recType"]')[0].checked = true;
+        if (document.querySelector('input[name="parcelValorType"]')) document.querySelector('input[name="parcelValorType"][value="porParcela"]').checked = true;
         $('panelRecorrencia').classList.add('hidden');
         $('parcelaFields').classList.add('hidden');
         $('fixaFields').classList.add('hidden');
@@ -784,7 +818,7 @@
         const cat = $('fCategoria').value;
         const subcat = $('fSubcategoria').value;
         const destino = $('fDestino').value;
-        const pendente = $('fPendente').checked;
+        const pendente = !$('fEfetivado').checked;
         const cartao = destino === 'Cartoes' ? $('fCartao').value : '';
         const recType = document.querySelector('input[name="recType"]:checked')?.value || 'unico';
 
@@ -838,6 +872,8 @@
             const qtd = parseInt($('fParcelaQtd').value) || 2;
             const inicio = parseInt($('fParcelaInicio').value) || 1;
             const periodo = $('fParcelaPeriodo').value;
+            const parcelValorType = document.querySelector('input[name="parcelValorType"]:checked')?.value || 'porParcela';
+            const valorParcela = parcelValorType === 'valorTotal' ? Math.round((valor / qtd) * 100) / 100 : valor;
             for (let i = 0; i < qtd; i++) {
                 const d = new Date(data + 'T12:00:00');
                 if (periodo === 'mensal') d.setMonth(d.getMonth() + i);
@@ -845,7 +881,7 @@
                 else if (periodo === 'semestral') d.setMonth(d.getMonth() + (i * 6));
                 else if (periodo === 'anual') d.setFullYear(d.getFullYear() + i);
                 transacoes.push({
-                    id: uid(), descricao: `${desc} (${inicio + i}/${inicio + qtd - 1})`, valor, data: d.toISOString().split('T')[0],
+                    id: uid(), descricao: `${desc} (${inicio + i}/${inicio + qtd - 1})`, valor: valorParcela, data: d.toISOString().split('T')[0],
                     tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente: true, cartao, recorrencia: 'parcelada'
                 });
             }
@@ -1179,7 +1215,7 @@
         try {
             if ($('novoTitle')) $('novoTitle').textContent = 'Carregando Dados... ⏳';
             const [rT, rC, rCat, rConf] = await Promise.all([
-                supabase.from('transacoes').select('*'),
+                supabase.from('transacoes').select('*').limit(10000),
                 supabase.from('cartoes').select('*'),
                 supabase.from('categorias').select('dados').eq('id', 'unico').single(),
                 supabase.from('config').select('*').eq('id', 'unico').single()

@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=7">
 </head>
 
 <body>
@@ -114,6 +114,15 @@
                 </div>
             </header>
 
+            <!-- Card Chart Section -->
+            <div id="cardChartSection" class="card-chart-section hidden">
+                <div class="card-chart-header">
+                    <span>💳</span>
+                    <strong>Gastos nos Cartões</strong>
+                </div>
+                <div id="cardChartContainer" class="card-chart-container"></div>
+            </div>
+
             <!-- Pending Alert (Mantido) -->
             <div id="pendingCard" class="pending-card hidden" onclick="FC.filterByTab('pendentes')">
                 <span class="pending-icon">🏦</span>
@@ -203,6 +212,12 @@
                     <label class="radio-opt"><input type="radio" name="recType" value="fixa"> Fixa (recorrente)</label>
                     <!-- Parcela fields -->
                     <div id="parcelaFields" class="sub-fields hidden">
+                        <div class="sub-row"><label>Tipo do valor</label>
+                            <div class="parcel-type-group">
+                                <label class="radio-opt-inline"><input type="radio" name="parcelValorType" value="porParcela" checked> Valor da parcela</label>
+                                <label class="radio-opt-inline"><input type="radio" name="parcelValorType" value="valorTotal"> Valor total (dividir)</label>
+                            </div>
+                        </div>
                         <div class="sub-row"><label>Parcela inicial</label><input type="number" id="fParcelaInicio"
                                 value="1" min="1" class="input-mini"></div>
                         <div class="sub-row"><label>Quantidade</label><input type="number" id="fParcelaQtd" value="2"
@@ -232,15 +247,15 @@
                 <!-- Data vencimento -->
                 <div class="form-row-icon">
                     <span>📅</span>
-                    <div class="row-content"><span class="row-label">Data vencimento</span><input type="date" id="fData"
+                    <div class="row-content"><span class="row-label">Data do lançamento</span><input type="date" id="fData"
                             class="input-date"></div>
                 </div>
 
-                <!-- Pendente -->
+                <!-- Efetivado -->
                 <div class="form-row-icon">
-                    <span>⏳</span>
-                    <div class="row-content"><span class="row-label">Pendente</span><label class="toggle-switch"><input
-                                type="checkbox" id="fPendente"><span class="slider"></span></label></div>
+                    <span>✅</span>
+                    <div class="row-content"><span class="row-label">Efetivado</span><label class="toggle-switch"><input
+                                type="checkbox" id="fEfetivado"><span class="slider"></span></label></div>
                 </div>
 
                 <!-- Categoria -->
@@ -528,7 +543,7 @@
 
     <!-- App Logic -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=7"></script>
 </body>
 
 </html>
