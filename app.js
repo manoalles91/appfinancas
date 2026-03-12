@@ -141,6 +141,9 @@
         const despesasTotal = txs.filter(t => t.tipo === 'despesa')
             .reduce((acc, current) => acc + current.valor, 0);
 
+        // Update top-level display
+        $('dashReceitas').textContent = fmt(receitasPagas);
+
         // 4. Saldo Livre Projetado
         const saldoLivre = receitasTotal - despesasTotal;
 
@@ -149,6 +152,7 @@
         if (dashContainer) {
             let html = '';
             const meta = {
+                'Receitas': { icon: '💰', color: 'receitas', tetoPerc: 1.0, isIncome: true },
                 'Essenciais': { icon: '🏠', color: 'essenciais', tetoPerc: 0.50 },
                 'Estilo de Vida': { icon: '🍕', color: 'estilo-vida', tetoPerc: 0.15 },
                 'Filhos': { icon: '👶', color: 'filhos', tetoPerc: 0.15 },
@@ -157,16 +161,30 @@
             };
 
             const catsTotals = {};
-            txs.filter(t => t.tipo === 'despesa').forEach(t => {
+            const catsPagas = {}; // for income bar
+            txs.forEach(t => {
                 const c = t.categoria || 'Geral';
                 catsTotals[c] = (catsTotals[c] || 0) + t.valor;
+                if (t.tipo === 'receita' && !t.pendente) {
+                    catsPagas[c] = (catsPagas[c] || 0) + t.valor;
+                }
             });
 
-            Object.keys(categorias).filter(c => c !== 'Receitas').forEach(c => {
+            Object.keys(categorias).forEach(c => {
                 const info = meta[c] || { icon: '📦', color: 'investimentos', tetoPerc: 0.10 };
-                const gasto = catsTotals[c] || 0;
-                const teto = receitasTotal > 0 ? receitasTotal * info.tetoPerc : 1000;
-                const perc = teto > 0 ? Math.min((gasto / teto) * 100, 100) : 0;
+                const valorAtual = catsTotals[c] || 0;
+                
+                let teto, perc, subTotalLabel;
+                if (info.isIncome) {
+                    teto = valorAtual; // Total planned income
+                    const pago = catsPagas[c] || 0;
+                    perc = teto > 0 ? Math.min((pago / teto) * 100, 100) : 0;
+                    subTotalLabel = `${fmt(pago)} recebido`;
+                } else {
+                    teto = receitasTotal > 0 ? receitasTotal * info.tetoPerc : 1000;
+                    perc = teto > 0 ? Math.min((valorAtual / teto) * 100, 100) : 0;
+                    subTotalLabel = `${fmt(valorAtual)} / ${fmt(teto)}`;
+                }
                 
                 const pills = (categorias[c] || []).map(sub => {
                     const subGasto = txs.filter(t => t.categoria === c && t.subcategoria === sub).reduce((s,tx)=>s+tx.valor,0);
@@ -177,7 +195,7 @@
                 <div class="progress-item" onclick="FC.showCategoryBreakdown('${c}')" style="cursor:pointer">
                     <div class="progress-labels">
                         <span>${info.icon} ${c} <span>${perc.toFixed(0)}%</span></span>
-                        <span>${fmt(gasto)} / ${fmt(teto)}</span>
+                        <span>${subTotalLabel}</span>
                     </div>
                     <div class="progress-track">
                         <div class="progress-fill ${info.color}" style="width: ${perc}%"></div>
@@ -842,6 +860,10 @@
         if ($('lblfData')) {
             $('lblfData').textContent = isCard ? 'Mês da Fatura' : 'Data do lançamento';
         }
+        if ($('fData') && $('fDataDisplay')) {
+            $('fData').classList.toggle('hidden', isCard);
+            $('fDataDisplay').classList.toggle('hidden', !isCard);
+        }
         updateFaturaLabel();
     }
 
@@ -851,6 +873,10 @@
         const d = new Date(dStr + 'T12:00:00');
         if ($('fFatura')) {
             $('fFatura').textContent = `${MESES[d.getMonth()]}, ${d.getFullYear()}`;
+        }
+        // Update display span if it exists
+        if ($('fDataDisplay')) {
+            $('fDataDisplay').textContent = `${MESES[d.getMonth()]}, ${d.getFullYear()}`;
         }
     }
 
@@ -1136,6 +1162,12 @@
         // Form: valor mask
         $('fValor').addEventListener('input', function () { formatInput(this); });
         $('fData').addEventListener('change', updateFaturaLabel);
+        if ($('fDataDisplay')) {
+            $('fDataDisplay').addEventListener('click', () => {
+                if ($('fData').showPicker) $('fData').showPicker();
+                else $('fData').click();
+            });
+        }
 
         // Form: recorrência
         $('rowRecorrencia').addEventListener('click', () => $('panelRecorrencia').classList.toggle('hidden'));
