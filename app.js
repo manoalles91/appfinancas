@@ -232,7 +232,7 @@
                         <div class="cc-chart-track">
                             <div class="cc-chart-fill" style="width:${perc}%;background:${color}"></div>
                         </div>
-                        <div class="cc-chart-meta">${perc}% do limite (${fmt(c.limite)}) · Fatura vence dia ${String(c.vencimento || 10).padStart(2,'0')}</div>
+                        <div class="cc-chart-meta">Fatura: ${fmt(gastoCartao)} · Limite ${fmt(c.limite)} (${perc}%) · Venc. dia ${String(c.vencimento || 10).padStart(2,'0')}</div>
                     </div>
                 `;
             });
@@ -242,6 +242,36 @@
         } else if ($('cardChartSection')) {
             $('cardChartSection').classList.add('hidden');
         }
+
+        FC.showCategoryBreakdown = (mainCat) => {
+            const list = txs.filter(t => {
+                const cat = t.categoria || 'Geral';
+                return t.tipo === 'despesa' && (cat === mainCat || categorias[mainCat]?.includes(cat));
+            }).sort((a, b) => new Date(b.data) - new Date(a.data));
+
+            const total = list.reduce((s, t) => s + t.valor, 0);
+            
+            $('mbCategory').textContent = mainCat;
+            $('mbTotal').textContent = fmt(total);
+            
+            const listEl = $('mbList');
+            if (list.length === 0) {
+                listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Nenhum gasto este mês</div>';
+            } else {
+                listEl.innerHTML = list.map(t => {
+                    const d = new Date(t.data + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+                    const cardTag = t.cartao ? `<span class="fatura-date" style="color:var(--accent)"> • 💳 ${t.cartao}</span>` : '';
+                    return `<div class="fatura-item">
+                        <div class="fatura-info">
+                            <span class="fatura-desc">${t.descricao}</span>
+                            <span class="fatura-date">${d} • ${t.subcategoria || t.categoria}${cardTag}</span>
+                        </div>
+                        <span class="fatura-val">${fmt(t.valor)}</span>
+                    </div>`;
+                }).join('');
+            }
+            $('modalBreakdown').classList.remove('hidden');
+        };
 
         // Pending Alert Box
         let pending = 0, pendTotal = 0;
@@ -590,9 +620,9 @@
                     <div class="cc-progress"><div class="cc-progress-bar" style="width:${perc}%;background:${barColor}"></div></div>
                     <div class="cc-perc">${perc}%</div>
                     <div class="cc-dates">
-                        <span>Conta<strong>Conta Corrente</strong></span>
+                        <span>Venc. Fatura<strong>${String(c.vencimento).padStart(2, '0')}/${MESES[currentMonth].slice(0, 3)}</strong></span>
                         <span>Fechamento<strong>${String(c.fechamento).padStart(2, '0')}/${MESES[currentMonth].slice(0, 3)}</strong></span>
-                        <span>Vencimento<strong>${String(c.vencimento).padStart(2, '0')}/${MESES[currentMonth].slice(0, 3)}</strong></span>
+                        <span>Fatura<strong>${fmt(emAberto)}</strong></span>
                     </div>
                 </div>
                 <div class="cc-fatura">

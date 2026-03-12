@@ -579,6 +579,32 @@ select {
     font-size: .85rem;
 }
 
+.breakdown-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background: var(--bg3);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+}
+
+.breakdown-summary span {
+    color: var(--text2);
+    font-weight: 600;
+}
+
+.breakdown-summary strong {
+    color: var(--accent);
+    font-size: 1.2rem;
+}
+
+.progress-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+}
+
 /* ===== OVERVIEW ===== */
 .overview-section,
 .casal-section,

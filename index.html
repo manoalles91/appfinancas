@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=8">
 </head>
 
 <body>
@@ -73,7 +73,7 @@
 
                     <!-- Progress Bars -->
                     <div class="progress-section">
-                        <div class="progress-item">
+                        <div class="progress-item" onclick="FC.showCategoryBreakdown('Essenciais')" style="cursor:pointer">
                             <div class="progress-labels">
                                 <span>🏠 Essenciais <span id="lblEssenciais">0%</span></span>
                                 <span id="valEssenciais">R$ 0 / R$ 0</span>
@@ -83,7 +83,7 @@
                             </div>
                             <div class="subcat-pills" id="pillsEssenciais"></div>
                         </div>
-                        <div class="progress-item">
+                        <div class="progress-item" onclick="FC.showCategoryBreakdown('Estilo de Vida')" style="cursor:pointer">
                             <div class="progress-labels">
                                 <span>🍕 Estilo de Vida <span id="lblEstiloVida">0%</span></span>
                                 <span id="valEstiloVida">R$ 0 / R$ 0</span>
@@ -93,7 +93,7 @@
                             </div>
                             <div class="subcat-pills" id="pillsEstiloVida"></div>
                         </div>
-                        <div class="progress-item">
+                        <div class="progress-item" onclick="FC.showCategoryBreakdown('Investimentos')" style="cursor:pointer">
                             <div class="progress-labels">
                                 <span>📈 Investimentos <span id="lblInvestimentos">0%</span></span>
                                 <span id="valInvestimentos">R$ 0 / R$ 0</span>
@@ -482,6 +482,24 @@
             </div>
         </div>
 
+        <!-- ========== MODAL: Detalhamento de Categoria ========== -->
+        <div id="modalBreakdown" class="modal hidden">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h3 id="mbTitle">📊 Detalhamento</h3>
+                    <button class="close-btn" onclick="FC.closeModal('modalBreakdown')">×</button>
+                </div>
+                <div class="breakdown-summary">
+                    <span id="mbCategory">Categoria</span>
+                    <strong id="mbTotal">R$ 0,00</strong>
+                </div>
+                <div id="mbList" class="fatura-list"></div>
+                <div class="modal-actions">
+                    <button class="btn-cancel" onclick="FC.closeModal('modalBreakdown')">Fechar</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal Edit Recurrence Choice -->
         <div id="modalRecEdit" class="modal-overlay hidden">
             <div class="modal" style="text-align:center;">
@@ -543,7 +561,7 @@
 
     <!-- App Logic -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=8"></script>
 </body>
 
 </html>
