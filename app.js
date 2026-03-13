@@ -507,6 +507,8 @@
             $('fixaFields').classList.add('hidden');
             $('parcelaFields').classList.add('hidden');
         }
+        $('fAjuste').value = t.ajuste || 0;
+        $('ajusteRow').classList.toggle('hidden', rType === 'unico');
 
         fillCategorias(t.categoria);
         setTimeout(() => {
@@ -810,12 +812,16 @@
     // ===== FORM: NOVO LANÇAMENTO =====
     function resetForm() {
         editingId = null;
+        window.recEditChoice = null;
+        window.tempEditData = null;
         $('novoTitle').textContent = 'Nova Despesa';
         if ($('btnDeleteEntry')) $('btnDeleteEntry').classList.add('hidden');
         $('fDesc').value = '';
         $('fValor').value = '';
         $('fData').value = new Date().toISOString().split('T')[0];
         $('fEfetivado').checked = false;
+        $('fAjuste').value = 0;
+        $('ajusteRow').classList.add('hidden');
         $$('.tipo-btn').forEach(b => b.classList.toggle('active', b.dataset.t === 'despesa'));
         $$('.quem-btn').forEach(b => b.classList.toggle('active', b.dataset.q === 'Eu'));
         $$('input[name="recType"]')[0].checked = true;
@@ -900,6 +906,7 @@
         const pendente = !$('fEfetivado').checked;
         const cartao = destino === 'Cartoes' ? $('fCartao').value : '';
         const recType = document.querySelector('input[name="recType"]:checked')?.value || 'unico';
+        const ajuste = parseFloat($('fAjuste').value) || 0;
 
         if (!desc || !valor) { toast('⚠️ Preencha descrição e valor'); return; }
 
@@ -910,7 +917,7 @@
                 const isRecurring = (t.recorrencia === 'gerada' || t.recorrencia === 'fixa');
 
                 if (isRecurring && !window.recEditChoice) {
-                    window.tempEditData = { desc, valor, data, tipo, quem, cat, subcat, destino, pendente, cartao, recType, periodo: $('fFixaPeriodo').value };
+                    window.tempEditData = { desc, valor, data, tipo, quem, cat, subcat, destino, pendente, cartao, recType, ajuste, periodo: $('fFixaPeriodo').value };
                     FC.openModal('modalRecEdit');
                     return;
                 }
@@ -925,7 +932,7 @@
                     transacoes = transacoes.filter(x => !delIds.includes(x.id));
                     if (delIds.length > 0) supabase.from('transacoes').delete().in('id', delIds).then();
 
-                    Object.assign(t, { descricao: d.desc, valor: d.valor, data: d.data, tipo: d.tipo, quem: d.quem, categoria: d.cat, subcategoria: d.subcat, destino: d.destino, pendente: d.pendente, cartao: d.cartao, recorrencia: 'fixa', periodo: d.periodo || t.periodo || 'mensal' });
+                    Object.assign(t, { descricao: d.desc, valor: d.valor, data: d.data, tipo: d.tipo, quem: d.quem, categoria: d.cat, subcategoria: d.subcat, destino: d.destino, pendente: d.pendente, cartao: d.cartao, recorrencia: 'fixa', periodo: d.periodo || t.periodo || 'mensal', ajuste: d.ajuste });
                 } else if (window.recEditChoice === 'onlyThis') {
                     const d = window.tempEditData;
                     if (t.recorrencia === 'fixa') {
@@ -933,12 +940,12 @@
                         if (t.periodo === 'mensal') nextD.setMonth(nextD.getMonth() + 1);
                         else nextD.setFullYear(nextD.getFullYear() + 1);
                         const nxDStr = nextD.toISOString().split('T')[0];
-                        transacoes.push({ id: uid(), descricao: t.descricao, valor: t.valor, data: nxDStr, tipo: t.tipo, quem: t.quem, categoria: t.categoria, subcategoria: t.subcategoria, destino: t.destino, pendente: true, cartao: t.cartao, recorrencia: 'fixa', periodo: t.periodo });
+                        transacoes.push({ id: uid(), descricao: t.descricao, valor: t.valor, data: nxDStr, tipo: t.tipo, quem: t.quem, categoria: t.categoria, subcategoria: t.subcategoria, destino: t.destino, pendente: true, cartao: t.cartao, recorrencia: 'fixa', periodo: t.periodo, ajuste: t.ajuste });
                         t.recorrencia = 'gerada';
                     }
                     Object.assign(t, { descricao: d.desc, valor: d.valor, data: d.data, tipo: d.tipo, quem: d.quem, categoria: d.cat, subcategoria: d.subcat, destino: d.destino, pendente: d.pendente, cartao: d.cartao });
                 } else {
-                    const updateObj = { descricao: desc, valor, data, tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente, cartao, recorrencia: recType };
+                    const updateObj = { descricao: desc, valor, data, tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente, cartao, recorrencia: recType, ajuste };
                     if (recType === 'fixa') updateObj.periodo = $('fFixaPeriodo').value;
                     Object.assign(transacoes[idx], updateObj);
                 }
@@ -952,22 +959,27 @@
             const inicio = parseInt($('fParcelaInicio').value) || 1;
             const periodo = $('fParcelaPeriodo').value;
             const parcelValorType = document.querySelector('input[name="parcelValorType"]:checked')?.value || 'porParcela';
-            const valorParcela = parcelValorType === 'valorTotal' ? Math.round((valor / qtd) * 100) / 100 : valor;
+            const baseValor = parcelValorType === 'valorTotal' ? Math.round((valor / qtd) * 100) / 100 : valor;
+            
             for (let i = 0; i < qtd; i++) {
                 const d = new Date(data + 'T12:00:00');
                 if (periodo === 'mensal') d.setMonth(d.getMonth() + i);
                 else if (periodo === 'semanal') d.setDate(d.getDate() + (i * 7));
                 else if (periodo === 'semestral') d.setMonth(d.getMonth() + (i * 6));
                 else if (periodo === 'anual') d.setFullYear(d.getFullYear() + i);
+                
+                // Aplicar ajuste composto
+                const valorAjustado = baseValor * Math.pow(1 + (ajuste / 100), i);
+                
                 transacoes.push({
-                    id: uid(), descricao: `${desc} (${inicio + i}/${inicio + qtd - 1})`, valor: valorParcela, data: d.toISOString().split('T')[0],
-                    tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente: true, cartao, recorrencia: 'parcelada'
+                    id: uid(), descricao: `${desc} (${inicio + i}/${inicio + qtd - 1})`, valor: Math.round(valorAjustado * 100) / 100, data: d.toISOString().split('T')[0],
+                    tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente: true, cartao, recorrencia: 'parcelada', ajuste: i === 0 ? ajuste : 0
                 });
             }
             toast(`✅ ${qtd} parcelas criadas`);
         } else if (recType === 'fixa') {
             const periodo = $('fFixaPeriodo').value;
-            transacoes.push({ id: uid(), descricao: desc, valor, data, tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente, cartao, recorrencia: 'fixa', periodo });
+            transacoes.push({ id: uid(), descricao: desc, valor, data, tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente, cartao, recorrencia: 'fixa', periodo, ajuste });
             toast('✅ Despesa fixa criada');
         } else {
             transacoes.push({ id: uid(), descricao: desc, valor, data, tipo, quem, categoria: cat, subcategoria: subcat, destino, pendente, cartao, recorrencia: 'unico' });
@@ -1084,13 +1096,22 @@
             let nextDate = new Date(lastDate);
 
             // Advance one period for the first generation
+            let i = 0;
             if (p === 'mensal') nextDate.setMonth(nextDate.getMonth() + 1);
             else if (p === 'semanal') nextDate.setDate(nextDate.getDate() + 7);
             else if (p === 'semestral') nextDate.setMonth(nextDate.getMonth() + 6);
             else if (p === 'anual') nextDate.setFullYear(nextDate.getFullYear() + 1);
             else nextDate.setMonth(nextDate.getMonth() + 1); // fallback
+            i++;
 
             while (nextDate <= limitDate) {
+                // Adjustment calculation
+                let valAjustado = template.valor;
+                if (template.ajuste) {
+                    valAjustado = template.valor * Math.pow(1 + (template.ajuste/100), i);
+                    valAjustado = Math.round(valAjustado * 100) / 100;
+                }
+
                 // Safeguard timezone format: build YYYY-MM-DD manually
                 const yyyy = nextDate.getFullYear();
                 const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
@@ -1101,29 +1122,22 @@
 
                 if (!exists) {
                     transacoes.push({
-                        id: uid(), descricao: template.descricao, valor: template.valor, data: dateStr,
+                        id: uid(), descricao: template.descricao, valor: valAjustado, data: dateStr,
                         tipo: template.tipo, quem: template.quem, categoria: template.categoria,
                         subcategoria: template.subcategoria, destino: template.destino, pendente: true,
-                        cartao: template.cartao || '', recorrencia: 'gerada'
+                        cartao: template.cartao || '', recorrencia: 'gerada', ajuste: 0
                     });
                 }
 
                 // Advance one period for next iteration
-                const prevDate = nextDate.getDate();
-                if (p === 'mensal') {
-                    nextDate.setMonth(nextDate.getMonth() + 1);
-                    if (nextDate.getDate() < prevDate) nextDate.setDate(0); // Fixes 31/01 to 28/02 skip bug
-                }
+                if (p === 'mensal') nextDate.setMonth(nextDate.getMonth() + 1);
                 else if (p === 'semanal') nextDate.setDate(nextDate.getDate() + 7);
-                else if (p === 'semestral') {
-                    nextDate.setMonth(nextDate.getMonth() + 6);
-                    if (nextDate.getDate() < prevDate) nextDate.setDate(0);
-                }
+                else if (p === 'semestral') nextDate.setMonth(nextDate.getMonth() + 6);
                 else if (p === 'anual') nextDate.setFullYear(nextDate.getFullYear() + 1);
-                else nextDate.setMonth(nextDate.getMonth() + 1); // fallback
+                else nextDate.setMonth(nextDate.getMonth() + 1);
+                i++;
             }
         });
-        saveAll();
     }
 
     // ===== INIT =====
@@ -1184,6 +1198,7 @@
             $('lblRecorrencia').textContent = v === 'unico' ? 'Não recorrente ▸' : v === 'parcelada' ? 'Parcelar ou repetir ▸' : 'Fixa (recorrente) ▸';
             $('parcelaFields').classList.toggle('hidden', v !== 'parcelada');
             $('fixaFields').classList.toggle('hidden', v !== 'fixa');
+            $('ajusteRow').classList.toggle('hidden', v === 'unico');
         }));
 
         // Form: categoria change
