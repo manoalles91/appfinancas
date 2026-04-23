@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Dashboard from '@/components/Dashboard';
 import TransactionList from '@/components/TransactionList';
