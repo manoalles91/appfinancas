@@ -76,8 +76,8 @@ jobs:
       - name: Build with Next.js
         run: ${{ steps.detect-package-manager.outputs.runner }} next build
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: https://nwdzrntbmiwaauauwpga.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53ZHpybnRibWl3YWF1YXV3cGdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNjI2OTksImV4cCI6MjA4ODYzODY5OX0.7Mr3jd_Rz_Cp-ADi54z26B4ESxItsyQ05DIJLEqjfNc
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
