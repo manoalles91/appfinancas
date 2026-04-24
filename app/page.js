@@ -186,24 +186,25 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#0f172a] text-slate-200 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-8">
-        <header className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-slate-800">
+        {/* Banner de Última Atualização */}
+        <div className="fixed top-0 left-0 right-0 z-50 bg-indigo-600/90 backdrop-blur-md border-b border-indigo-500/30">
+          <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-widest text-white/90">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+            </span>
+            Última atualização: {lastUpdated}
+          </div>
+        </div>
+
+        <header className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-slate-800 pt-8">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/10 border border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.1)]">
               <Sparkles className="h-6 w-6 text-indigo-400" />
             </div>
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Minhas Finanças</h1>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                <p className="text-slate-400 font-medium text-sm">Controle Total Supabase</p>
-                <span className="hidden sm:block text-slate-600">•</span>
-                <p className="text-indigo-400/80 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-                  </span>
-                  última atualização {lastUpdated}
-                </p>
-              </div>
+              <p className="text-slate-400 font-medium text-sm">Controle Total Supabase</p>
             </div>
           </div>
           
