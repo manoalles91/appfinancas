@@ -11,14 +11,20 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid, 
     const [showAll, setShowAll] = useState(false);
 
     const filteredTransactions = useMemo(() => {
-        let list = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const txs = Array.isArray(transactions) ? transactions : [];
+        let list = [...txs].sort((a, b) => {
+            const dateA = a && a.date ? new Date(a.date) : new Date(0);
+            const dateB = b && b.date ? new Date(b.date) : new Date(0);
+            return dateB - dateA;
+        });
+        
         if (filter !== 'all') {
-            list = list.filter(t => t.type === filter);
+            list = list.filter(t => t && t.type === filter);
         }
         if (statusFilter === 'pending') {
-            list = list.filter(t => !t.pago);
+            list = list.filter(t => t && !t.pago);
         } else if (statusFilter === 'paid') {
-            list = list.filter(t => t.pago);
+            list = list.filter(t => t && t.pago);
         }
         return list;
     }, [transactions, filter, statusFilter]);
@@ -61,6 +67,9 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid, 
                 </div>
                 {/* Filters */}
                 <div className="flex flex-col gap-3 pt-2">
+                    <div className="flex items-center justify-center gap-2 p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                        <span className="text-[10px] text-amber-400 font-bold uppercase">💡 Clique no relógio para marcar como PAGO</span>
+                    </div>
                     <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                         {filterButtons.map((f) => (
                             <button
@@ -117,15 +126,15 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid, 
                                     <div className="flex items-center gap-3 min-w-0">
                                         <button 
                                             onClick={() => onTogglePaid && onTogglePaid(t.id, !isPaid)}
-                                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all ${
-                                                isPaid ? 'bg-emerald-500/20' : 'bg-amber-500/10 hover:bg-amber-500/20'
+                                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all cursor-pointer hover:scale-110 ${
+                                                isPaid ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-amber-500/10 hover:bg-amber-500/30'
                                             }`}
-                                            title={isPaid ? "Marcar como pendente" : "Marcar como pago"}
+                                            title={isPaid ? "Marcar como pendente" : "Marcar como PAGO ✓"}
                                         >
                                             {isPaid ? (
-                                                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                                                <CheckCircle2 className="h-6 w-6 text-emerald-500" />
                                             ) : (
-                                                <Clock className="h-5 w-5 text-amber-500/70" />
+                                                <Clock className="h-6 w-6 text-amber-500" />
                                             )}
                                         </button>
                                         <div className="min-w-0">

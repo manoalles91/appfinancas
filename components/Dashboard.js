@@ -11,29 +11,49 @@ const PIE_COLORS = [
     '#2dd4bf', '#c084fc', '#fb7185', '#4ade80',
 ];
 
-export default function Dashboard({ transactions }) {
+const formatCurrency = (value) => {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    }).format(value);
+};
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="glass-card rounded-lg px-3 py-2 text-xs shadow-xl border border-white/10 bg-slate-900/90 backdrop-blur-md">
+                <p className="font-medium text-slate-300">Dia {label}</p>
+                <p className={`font-bold ${payload[0].value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {formatCurrency(payload[0].value)}
+                </p>
+            </div>
+        );
+    }
+    return null;
+};
+
+export default function Dashboard({ transactions = [] }) {
     const summary = useMemo(() => {
-        const income = transactions
-            .filter((t) => t.type === 'income')
-            .reduce((acc, t) => acc + Number(t.amount), 0);
+        const txs = Array.isArray(transactions) ? transactions : [];
+        const income = txs
+            .filter((t) => t && t.type === 'income')
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
         
-        // Saldo Conta Corrente: Apenas despesas PAGAS via Conta Corrente subtraem
-        const checkingPaidExpenses = transactions
-            .filter((t) => t.payment_method === 'checking' && (t.type === 'expense' || t.type === 'credit') && t.pago)
-            .reduce((acc, t) => acc + Number(t.amount), 0);
+        const checkingPaidExpenses = txs
+            .filter((t) => t && t.payment_method === 'checking' && (t.type === 'expense' || t.type === 'credit') && t.pago)
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        // Fatura Cartão: Tudo que foi gasto no crédito (pago ou não) que não seja 'income'
-        const creditExpenses = transactions
-            .filter((t) => t.payment_method === 'credit')
-            .reduce((acc, t) => acc + Number(t.amount), 0);
+        const creditExpenses = txs
+            .filter((t) => t && t.payment_method === 'credit')
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        const fixedTotal = transactions
-            .filter((t) => t.fixa)
-            .reduce((acc, t) => acc + Number(t.amount), 0);
+        const fixedTotal = txs
+            .filter((t) => t && t.fixa)
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
         
-        const fixedPaid = transactions
-            .filter((t) => t.fixa && t.pago)
-            .reduce((acc, t) => acc + Number(t.amount), 0);
+        const fixedPaid = txs
+            .filter((t) => t && t.fixa && t.pago)
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
         const checkingBalance = income - checkingPaidExpenses;
         
@@ -48,12 +68,13 @@ export default function Dashboard({ transactions }) {
     }, [transactions]);
 
     const categoryData = useMemo(() => {
+        const txs = Array.isArray(transactions) ? transactions : [];
         const map = {};
-        transactions
-            .filter(t => t.type === 'expense' || t.type === 'credit')
+        txs
+            .filter(t => t && (t.type === 'expense' || t.type === 'credit'))
             .forEach(t => {
                 const cat = t.category || 'Outros';
-                map[cat] = (map[cat] || 0) + t.amount;
+                map[cat] = (map[cat] || 0) + (t.amount || 0);
             });
         return Object.entries(map)
             .map(([name, value]) => ({ name, value }))
@@ -61,19 +82,21 @@ export default function Dashboard({ transactions }) {
     }, [transactions]);
 
     const projectionData = useMemo(() => {
+        const txs = Array.isArray(transactions) ? transactions : [];
         const now = new Date();
         const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
         const data = [];
         let runningBalance = 0;
 
-        const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const sorted = [...txs].sort((a, b) => new Date(a.date) - new Date(b.date));
         const byDay = {};
         sorted.forEach(t => {
+            if (!t || !t.date) return;
             const d = new Date(t.date);
             if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
                 const day = d.getDate();
                 if (!byDay[day]) byDay[day] = 0;
-                byDay[day] += (t.type === 'income' ? t.amount : -t.amount);
+                byDay[day] += (t.type === 'income' ? (t.amount || 0) : -(t.amount || 0));
             }
         });
 
@@ -84,13 +107,6 @@ export default function Dashboard({ transactions }) {
 
         return data;
     }, [transactions]);
-
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat('pt-BR', {
-            style: 'currency',
-            currency: 'BRL',
-        }).format(value);
-    };
 
     const summaryCards = [
         {
@@ -127,23 +143,8 @@ export default function Dashboard({ transactions }) {
         },
     ];
 
-    const CustomTooltip = ({ active, payload, label }) => {
-        if (active && payload && payload.length) {
-            return (
-                <div className="glass-card rounded-lg px-3 py-2 text-xs shadow-xl">
-                    <p className="font-medium text-foreground">Dia {label}</p>
-                    <p className={payload[0].value >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                        {formatCurrency(payload[0].value)}
-                    </p>
-                </div>
-            );
-        }
-        return null;
-    };
-
     return (
         <div className="space-y-6">
-            {/* Summary Cards */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {summaryCards.map((card, i) => {
                     const Icon = card.icon;

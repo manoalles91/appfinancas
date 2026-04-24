@@ -32,9 +32,11 @@ export default function AddTransactionForm({ onAdd }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!formData.description || !formData.amount) return;
-
-        const baseAmount = parseFloat(formData.amount);
+        const baseAmount = parseFloat(formData.amount) || 0;
+        if (baseAmount <= 0) {
+            alert('Por favor, insira um valor válido.');
+            return;
+        }
 
         if (formData.type === 'credit' && formData.installments > 1) {
             const installmentAmount = Math.round((baseAmount / formData.installments) * 100) / 100;
