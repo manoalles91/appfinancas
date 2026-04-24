@@ -18,6 +18,7 @@ export default function Home() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
   const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
+  const [lastUpdated, setLastUpdated] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -38,6 +39,8 @@ export default function Home() {
       console.error('Error fetching data:', error.message);
     } finally {
       setLoading(false);
+      const now = new Date();
+      setLastUpdated(now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' h');
     }
   }, []);
 
@@ -190,7 +193,17 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Minhas Finanças</h1>
-              <p className="text-slate-400 font-medium">Controle Total Supabase</p>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                <p className="text-slate-400 font-medium text-sm">Controle Total Supabase</p>
+                <span className="hidden sm:block text-slate-600">•</span>
+                <p className="text-indigo-400/80 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                  </span>
+                  última atualização {lastUpdated}
+                </p>
+              </div>
             </div>
           </div>
           
