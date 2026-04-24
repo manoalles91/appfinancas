@@ -328,7 +328,7 @@ export default function Home() {
         </section>
 
         <div className="grid gap-8 lg:grid-cols-2" id="transactions-list">
-          <AddTransactionForm onAdd={handleAddTransaction} />
+          <AddTransactionForm onAdd={handleAddTransaction} cartoes={cartoes} />
           <TransactionList 
             transactions={monthTransactions} 
             onDelete={handleDeleteTransaction} 

@@ -13,7 +13,7 @@ const TRANSACTION_TYPES = [
     { value: 'credit', label: 'Cartão', icon: CreditCard, color: 'text-purple-400', active: 'bg-purple-500/20 border-purple-500/40 text-purple-300' },
 ];
 
-export default function AddTransactionForm({ onAdd }) {
+export default function AddTransactionForm({ onAdd, cartoes = [] }) {
     const [formData, setFormData] = useState({
         description: '',
         amount: '',
@@ -24,7 +24,7 @@ export default function AddTransactionForm({ onAdd }) {
         cardName: '',
         pago: false,
         fixa: false,
-        payment_method: 'checking', // 'checking' | 'credit'
+        payment_method: 'checking',
         quem: 'Comum',
         subcategoria: '',
         destino: '',
@@ -166,7 +166,7 @@ export default function AddTransactionForm({ onAdd }) {
                             <div className="flex gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => setFormData({ ...formData, payment_method: 'checking' })}
+                                    onClick={() => setFormData({ ...formData, payment_method: 'checking', cardName: '' })}
                                     className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
                                         formData.payment_method === 'checking'
                                         ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
@@ -177,7 +177,7 @@ export default function AddTransactionForm({ onAdd }) {
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => setFormData({ ...formData, payment_method: 'credit' })}
+                                    onClick={() => setFormData({ ...formData, payment_method: 'credit', cardName: cartoes[0]?.nome || '' })}
                                     className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
                                         formData.payment_method === 'credit'
                                         ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
@@ -186,6 +186,29 @@ export default function AddTransactionForm({ onAdd }) {
                                 >
                                     💳 CARTÃO DE CRÉDITO
                                 </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Card Selection - Only when credit is selected */}
+                    {formData.type === 'expense' && formData.payment_method === 'credit' && cartoes.length > 0 && (
+                        <div className="space-y-1.5 animate-fade-in">
+                            <label className="text-xs font-medium text-purple-300 uppercase tracking-wide">Qual Cartão?</label>
+                            <div className="flex gap-2">
+                                {cartoes.map((card) => (
+                                    <button
+                                        key={card.id}
+                                        type="button"
+                                        onClick={() => setFormData({ ...formData, cardName: card.nome })}
+                                        className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${
+                                            formData.cardName === card.nome
+                                            ? 'bg-purple-500/20 text-white border-purple-500/50'
+                                            : 'bg-purple-500/5 text-purple-300 border-purple-500/20 hover:bg-purple-500/10'
+                                        }`}
+                                    >
+                                        {card.nome}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                     )}
