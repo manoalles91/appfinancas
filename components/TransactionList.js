@@ -6,9 +6,8 @@ import { Button } from '@/components/ui/button';
 import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCircle2, Clock, Lock } from 'lucide-react';
 import CategoryIcon from '@/components/CategoryIcon';
 
-export default function TransactionList({ transactions, onDelete, onTogglePaid }) {
+export default function TransactionList({ transactions, onDelete, onTogglePaid, statusFilter = 'all', onStatusFilterChange }) {
     const [filter, setFilter] = useState('all'); // all | income | expense | credit
-    const [statusFilter, setStatusFilter] = useState('all'); // all | pending | paid
     const [showAll, setShowAll] = useState(false);
 
     const filteredTransactions = useMemo(() => {
@@ -24,7 +23,7 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid }
         return list;
     }, [transactions, filter, statusFilter]);
 
-    const displayedTransactions = showAll ? filteredTransactions : filteredTransactions.slice(0, 8);
+    const displayedTransactions = showAll ? filteredTransactions : filteredTransactions.slice(0, 15);
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
@@ -85,7 +84,7 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid }
                         ].map((s) => (
                             <button
                                 key={s.value}
-                                onClick={() => setStatusFilter(s.value)}
+                                onClick={() => onStatusFilterChange && onStatusFilterChange(s.value)}
                                 className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
                                     statusFilter === s.value 
                                     ? 'bg-slate-800 text-white shadow-lg border border-slate-700' 
@@ -145,6 +144,18 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid }
                                                         </span>
                                                     </>
                                                 )}
+                                                {t.subcategoria && (
+                                                    <>
+                                                        <span className="text-muted-foreground/40">•</span>
+                                                        <span className="text-xs text-indigo-300/70 italic">{t.subcategoria}</span>
+                                                    </>
+                                                )}
+                                                {t.destino && (
+                                                    <>
+                                                        <span className="text-muted-foreground/40">•</span>
+                                                        <span className="text-xs text-slate-500">📍 {t.destino}</span>
+                                                    </>
+                                                )}
                                                 {t.card_name && (
                                                     <>
                                                         <span className="text-muted-foreground/40">•</span>
@@ -178,13 +189,13 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid }
                 </div>
 
                 {/* Show More */}
-                {filteredTransactions.length > 8 && !showAll && (
+                {filteredTransactions.length > 15 && !showAll && (
                     <button
                         onClick={() => setShowAll(true)}
                         className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-all cursor-pointer"
                     >
                         <ChevronDown className="h-3.5 w-3.5" />
-                        Ver mais ({filteredTransactions.length - 8} restantes)
+                        Ver mais ({filteredTransactions.length - 15} restantes)
                     </button>
                 )}
             </CardContent>

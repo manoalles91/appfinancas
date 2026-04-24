@@ -17,6 +17,7 @@ export default function Home() {
   // States para edição de cartão
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
+  const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
 
   const fetchData = useCallback(async () => {
     try {
@@ -82,6 +83,19 @@ export default function Home() {
     });
   }, [cartoes, transactions, viewDate]);
 
+  const pendingUrgentTransactions = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const limitDate = new Date(today);
+    limitDate.setDate(today.getDate() + 7); // Vencidas ou a vencer em até 7 dias
+
+    return transactions.filter(t => {
+      if (t.pago || (t.type !== 'expense' && t.type !== 'credit')) return false;
+      const tDate = new Date(t.date + 'T00:00:00');
+      return tDate <= limitDate;
+    });
+  }, [transactions]);
+
   const changeMonth = (offset) => {
     const next = new Date(viewDate);
     next.setMonth(next.getMonth() + offset);
@@ -102,7 +116,11 @@ export default function Home() {
           installment_info: newTransaction.installmentInfo,
           pago: newTransaction.pago,
           fixa: newTransaction.fixa,
-          payment_method: newTransaction.payment_method
+          payment_method: newTransaction.payment_method,
+          quem: newTransaction.quem || 'Comum',
+          subcategoria: newTransaction.subcategoria || '',
+          destino: newTransaction.destino || '',
+          ajuste: newTransaction.ajuste || 0
         }])
         .select();
       if (error) throw error;
@@ -192,15 +210,24 @@ export default function Home() {
         <Dashboard transactions={monthTransactions} />
 
         {/* Card de Resumo de Pendências (Estilo Print) */}
-        {transactions.filter(t => !t.pago && (t.type === 'expense' || t.type === 'credit')).length > 0 && (
-          <div className="flex flex-col items-center justify-center p-8 bg-slate-800/40 rounded-3xl border border-slate-700/50 text-center space-y-4 animate-fade-in shadow-2xl">
-            <div className="text-5xl">🏢</div>
+        {pendingUrgentTransactions.length > 0 && (
+          <div className="flex flex-col items-center justify-center p-8 bg-slate-800/40 rounded-3xl border border-red-500/30 text-center space-y-4 animate-fade-in shadow-2xl">
+            <div className="text-5xl">🚨</div>
             <div className="space-y-1">
               <p className="text-slate-300 font-medium">
-                Você tem <span className="text-emerald-400 font-bold">{transactions.filter(t => !t.pago && (t.type === 'expense' || t.type === 'credit')).length} despesas pendentes</span> no total de 
-                <span className="text-emerald-400 font-bold"> R$ {transactions.filter(t => !t.pago && (t.type === 'expense' || t.type === 'credit')).reduce((acc, t) => acc + Number(t.amount), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                Você tem <span className="text-red-400 font-bold">{pendingUrgentTransactions.length} despesas urgentes (vencidas ou a vencer)</span> no total de 
+                <span className="text-red-400 font-bold"> R$ {pendingUrgentTransactions.reduce((acc, t) => acc + Number(t.amount), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
               </p>
-              <button className="text-emerald-400 font-bold hover:underline cursor-pointer">Verificar</button>
+              <button 
+                onClick={() => {
+                  setTransactionStatusFilter('pending');
+                  const list = document.getElementById('transactions-list');
+                  list?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="text-red-400 font-bold hover:underline cursor-pointer"
+              >
+                Verificar
+              </button>
             </div>
           </div>
         )}
@@ -286,9 +313,15 @@ export default function Home() {
           </div>
         </section>
 
-        <div className="grid gap-8 lg:grid-cols-2">
+        <div className="grid gap-8 lg:grid-cols-2" id="transactions-list">
           <AddTransactionForm onAdd={handleAddTransaction} />
-          <TransactionList transactions={monthTransactions} onDelete={handleDeleteTransaction} onTogglePaid={handleTogglePaid} />
+          <TransactionList 
+            transactions={monthTransactions} 
+            onDelete={handleDeleteTransaction} 
+            onTogglePaid={handleTogglePaid}
+            statusFilter={transactionStatusFilter}
+            onStatusFilterChange={setTransactionStatusFilter}
+          />
         </div>
       </div>
 

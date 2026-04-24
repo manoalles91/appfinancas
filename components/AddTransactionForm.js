@@ -25,6 +25,9 @@ export default function AddTransactionForm({ onAdd }) {
         pago: false,
         fixa: false,
         payment_method: 'checking', // 'checking' | 'credit'
+        quem: 'Comum',
+        subcategoria: '',
+        destino: '',
     });
 
     const handleSubmit = (e) => {
@@ -52,6 +55,9 @@ export default function AddTransactionForm({ onAdd }) {
                     installmentInfo: `${i + 1}/${formData.installments}`,
                     pago: formData.pago,
                     payment_method: 'credit',
+                    quem: formData.quem,
+                    subcategoria: formData.subcategoria,
+                    destino: formData.destino,
                 });
             }
         } else if (formData.fixa) {
@@ -70,6 +76,9 @@ export default function AddTransactionForm({ onAdd }) {
                     fixa: true,
                     pago: i === 0 ? formData.pago : false,
                     payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
+                    quem: formData.quem,
+                    subcategoria: formData.subcategoria,
+                    destino: formData.destino,
                 });
             }
         } else {
@@ -84,6 +93,9 @@ export default function AddTransactionForm({ onAdd }) {
                 pago: formData.pago,
                 fixa: false,
                 payment_method: formData.type === 'credit' ? 'credit' : (formData.type === 'income' ? 'checking' : formData.payment_method),
+                quem: formData.quem,
+                subcategoria: formData.subcategoria,
+                destino: formData.destino,
             });
         }
 
@@ -98,6 +110,9 @@ export default function AddTransactionForm({ onAdd }) {
             pago: false,
             fixa: false,
             payment_method: 'checking',
+            quem: 'Comum',
+            subcategoria: '',
+            destino: '',
         });
     };
 
@@ -244,6 +259,38 @@ export default function AddTransactionForm({ onAdd }) {
                                     <option key={cat} value={cat}>{cat}</option>
                                 ))}
                             </select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Responsável (Quem?)</label>
+                            <select
+                                value={formData.quem}
+                                onChange={(e) => setFormData({ ...formData, quem: e.target.value })}
+                                className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
+                            >
+                                <option value="Comum">Comum</option>
+                                <option value="Eu">Eu</option>
+                                <option value="Outro">Outro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Subcategory & Destino row */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subcategoria</label>
+                            <Input
+                                placeholder="Ex: Jantar, Academia..."
+                                value={formData.subcategoria}
+                                onChange={(e) => setFormData({ ...formData, subcategoria: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Destino/Origem</label>
+                            <Input
+                                placeholder="Ex: Casa, Trabalho..."
+                                value={formData.destino}
+                                onChange={(e) => setFormData({ ...formData, destino: e.target.value })}
+                            />
                         </div>
                     </div>
 
