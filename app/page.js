@@ -8,6 +8,8 @@ import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight } 
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 
+const BUILD_TIME = '24/04/2026 18:35';
+
 export default function Home() {
   const [transactions, setTransactions] = useState([]);
   const [cartoes, setCartoes] = useState([]);
@@ -18,7 +20,6 @@ export default function Home() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
   const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
-  const [lastUpdated, setLastUpdated] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -39,8 +40,6 @@ export default function Home() {
       console.error('Error fetching data:', error.message);
     } finally {
       setLoading(false);
-      const now = new Date();
-      setLastUpdated(now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' h');
     }
   }, []);
 
@@ -193,7 +192,7 @@ export default function Home() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
             </span>
-            Última atualização: {lastUpdated}
+            App atualizado: {BUILD_TIME}
           </div>
         </div>
 
