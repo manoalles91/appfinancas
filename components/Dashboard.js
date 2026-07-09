@@ -32,7 +32,7 @@ const CustomTooltip = ({ active, payload, label }) => {
     return null;
 };
 
-export default function Dashboard({ transactions = [] }) {
+export default function Dashboard({ transactions = [], partner1 = 'Alle', partner2 = 'Esposa' }) {
     const summary = useMemo(() => {
         const txs = Array.isArray(transactions) ? transactions : [];
         const income = txs
@@ -66,6 +66,73 @@ export default function Dashboard({ transactions = [] }) {
             fixedPaid
         };
     }, [transactions]);
+
+    const coupleSummary = useMemo(() => {
+        const txs = Array.isArray(transactions) ? transactions : [];
+        
+        // personal expenses
+        const p1Personal = txs
+            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Eu')
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        const p2Personal = txs
+            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Outro')
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        // common expenses
+        const commonTotal = txs
+            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem && t.quem.startsWith('Comum'))
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        // who paid common
+        const p1CommonPaid = txs
+            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Comum - Eu')
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        const p2CommonPaid = txs
+            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Comum - Outro')
+            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        const totalCommonPaid = p1CommonPaid + p2CommonPaid;
+        const expectedShare = totalCommonPaid / 2;
+
+        let debtMessage = '';
+        let debtor = '';
+        let creditor = '';
+        let debtAmount = 0;
+
+        if (p1CommonPaid > p2CommonPaid) {
+            debtAmount = (p1CommonPaid - p2CommonPaid) / 2;
+            debtor = partner2;
+            creditor = partner1;
+            debtMessage = `${partner2} deve transferir ${formatCurrency(debtAmount)} para ${partner1}`;
+        } else if (p2CommonPaid > p1CommonPaid) {
+            debtAmount = (p2CommonPaid - p1CommonPaid) / 2;
+            debtor = partner1;
+            creditor = partner2;
+            debtMessage = `${partner1} deve transferir ${formatCurrency(debtAmount)} para ${partner2}`;
+        } else {
+            debtMessage = 'Despesas comuns equilibradas!';
+        }
+
+        const totalPersonal = p1Personal + p2Personal;
+        const p1Percent = totalPersonal > 0 ? (p1Personal / totalPersonal) * 100 : 50;
+        const p2Percent = totalPersonal > 0 ? (p2Personal / totalPersonal) * 100 : 50;
+
+        return {
+            p1Personal,
+            p2Personal,
+            commonTotal,
+            p1CommonPaid,
+            p2CommonPaid,
+            debtAmount,
+            debtor,
+            creditor,
+            debtMessage,
+            p1Percent,
+            p2Percent
+        };
+    }, [transactions, partner1, partner2]);
 
     const categoryData = useMemo(() => {
         const txs = Array.isArray(transactions) ? transactions : [];
@@ -196,6 +263,72 @@ export default function Dashboard({ transactions = [] }) {
                     </CardContent>
                 </Card>
             )}
+
+            {/* Painel do Casal Card */}
+            <Card className="animate-fade-in border-indigo-500/20 bg-indigo-950/10 backdrop-blur-md">
+                <CardContent className="p-6 space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                        <div className="space-y-1">
+                            <h3 className="text-lg font-bold text-indigo-400 flex items-center gap-2">
+                                🏡 Painel do Casal ({partner1} & {partner2})
+                            </h3>
+                            <p className="text-xs text-slate-400">
+                                Comparativo de gastos pessoais e acerto de despesas compartilhadas do mês.
+                            </p>
+                        </div>
+                        {coupleSummary.debtAmount > 0 ? (
+                            <div className="flex items-center gap-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3.5 py-1.5 rounded-xl text-xs font-bold animate-pulse">
+                                <span>💵 {coupleSummary.debtMessage}</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-3.5 py-1.5 rounded-xl text-xs font-bold">
+                                <span>🎉 {coupleSummary.debtMessage}</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                        <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50 space-y-1">
+                            <p className="text-[10px] text-purple-400 uppercase font-black tracking-wider">Gastos Pessoais {partner1}</p>
+                            <p className="text-xl font-bold text-white">{formatCurrency(coupleSummary.p1Personal)}</p>
+                            <p className="text-[10px] text-slate-500">Exclusivos de {partner1}</p>
+                        </div>
+                        <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50 space-y-1">
+                            <p className="text-[10px] text-rose-400 uppercase font-black tracking-wider">Gastos Pessoais {partner2}</p>
+                            <p className="text-xl font-bold text-white">{formatCurrency(coupleSummary.p2Personal)}</p>
+                            <p className="text-[10px] text-slate-500">Exclusivos de {partner2}</p>
+                        </div>
+                        <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50 space-y-1">
+                            <p className="text-[10px] text-teal-400 uppercase font-black tracking-wider">Despesas Comuns</p>
+                            <p className="text-xl font-bold text-white">{formatCurrency(coupleSummary.commonTotal)}</p>
+                            <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                                <span>Pago {partner1}: {formatCurrency(coupleSummary.p1CommonPaid)}</span>
+                                <span>Pago {partner2}: {formatCurrency(coupleSummary.p2CommonPaid)}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Comparison bar */}
+                    {(coupleSummary.p1Personal > 0 || coupleSummary.p2Personal > 0) && (
+                        <div className="space-y-2">
+                            <div className="flex justify-between text-xs font-bold uppercase tracking-wider">
+                                <span className="text-purple-400">Proporção {partner1} ({Math.round(coupleSummary.p1Percent)}%)</span>
+                                <span className="text-rose-400">{partner2} ({Math.round(coupleSummary.p2Percent)}%)</span>
+                            </div>
+                            <div className="h-2.5 w-full bg-slate-900 rounded-full overflow-hidden flex border border-slate-800">
+                                <div 
+                                    className="h-full bg-purple-500 transition-all duration-1000 shadow-[0_0_10px_rgba(168,85,247,0.4)]"
+                                    style={{ width: `${coupleSummary.p1Percent}%` }}
+                                />
+                                <div 
+                                    className="h-full bg-rose-500 transition-all duration-1000 shadow-[0_0_10px_rgba(244,63,94,0.4)]"
+                                    style={{ width: `${coupleSummary.p2Percent}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Charts Row */}
             <div className="grid gap-6 lg:grid-cols-5">

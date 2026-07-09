@@ -6,8 +6,17 @@ import { Button } from '@/components/ui/button';
 import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCircle2, Clock, Lock } from 'lucide-react';
 import CategoryIcon from '@/components/CategoryIcon';
 
-export default function TransactionList({ transactions, onDelete, onTogglePaid, statusFilter = 'all', onStatusFilterChange }) {
+export default function TransactionList({ 
+    transactions, 
+    onDelete, 
+    onTogglePaid, 
+    statusFilter = 'all', 
+    onStatusFilterChange, 
+    partner1 = 'Alle', 
+    partner2 = 'Esposa' 
+}) {
     const [filter, setFilter] = useState('all'); // all | income | expense | credit
+    const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum
     const [showAll, setShowAll] = useState(false);
 
     const filteredTransactions = useMemo(() => {
@@ -26,8 +35,18 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid, 
         } else if (statusFilter === 'paid') {
             list = list.filter(t => t && t.pago);
         }
+
+        // Filter by Spender
+        if (spenderFilter === 'Eu') {
+            list = list.filter(t => t && (t.quem === 'Eu' || t.quem === 'Comum - Eu'));
+        } else if (spenderFilter === 'Outro') {
+            list = list.filter(t => t && (t.quem === 'Outro' || t.quem === 'Comum - Outro'));
+        } else if (spenderFilter === 'Comum') {
+            list = list.filter(t => t && t.quem && t.quem.startsWith('Comum'));
+        }
+
         return list;
-    }, [transactions, filter, statusFilter]);
+    }, [transactions, filter, statusFilter, spenderFilter]);
 
     const displayedTransactions = showAll ? filteredTransactions : filteredTransactions.slice(0, 15);
 
@@ -57,6 +76,25 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid, 
         { value: 'expense', label: 'Despesas' },
         { value: 'credit', label: 'Cartão' },
     ];
+
+    const getSpenderBadge = (quem) => {
+        if (quem === 'Eu') {
+            return <span className="text-[9px] font-black uppercase bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/25">{partner1}</span>;
+        }
+        if (quem === 'Outro') {
+            return <span className="text-[9px] font-black uppercase bg-rose-500/10 text-rose-400 px-2 py-0.5 rounded-full border border-rose-500/25">{partner2}</span>;
+        }
+        if (quem === 'Comum - Eu') {
+            return <span className="text-[9px] font-black uppercase bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded-full border border-teal-500/25">Comum ({partner1})</span>;
+        }
+        if (quem === 'Comum - Outro') {
+            return <span className="text-[9px] font-black uppercase bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/25">Comum ({partner2})</span>;
+        }
+        if (quem === 'Comum') {
+            return <span className="text-[9px] font-black uppercase bg-slate-500/10 text-slate-400 px-2 py-0.5 rounded-full border border-slate-500/25">Comum</span>;
+        }
+        return null;
+    };
 
     return (
         <Card className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
@@ -104,6 +142,27 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid, 
                             </button>
                         ))}
                     </div>
+
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar mt-1 bg-slate-900/35 p-1 rounded-xl border border-slate-800/40">
+                        {[
+                            { value: 'all', label: '👥 Todos' },
+                            { value: 'Eu', label: `Pessoal ${partner1}` },
+                            { value: 'Outro', label: `Pessoal ${partner2}` },
+                            { value: 'Comum', label: '🏡 Comum' }
+                        ].map((sf) => (
+                            <button
+                                key={sf.value}
+                                onClick={() => { setSpenderFilter(sf.value); setShowAll(false); }}
+                                className={`flex-1 py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+                                    spenderFilter === sf.value
+                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    : 'text-slate-400 hover:text-slate-300'
+                                }`}
+                            >
+                                {sf.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
@@ -141,7 +200,9 @@ export default function TransactionList({ transactions, onDelete, onTogglePaid, 
                                             <p className={`text-sm font-medium leading-tight truncate ${isPaid ? 'text-slate-400 line-through decoration-slate-500/50' : ''}`}>
                                                 {t.description}
                                             </p>
-                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                                {getSpenderBadge(t.quem)}
+                                                {t.quem && <span className="text-muted-foreground/40">•</span>}
                                                 <span className="text-xs text-muted-foreground">{t.category}</span>
                                                 <span className="text-muted-foreground/40">•</span>
                                                 <span className="text-xs text-muted-foreground">{formatDate(t.date)}</span>

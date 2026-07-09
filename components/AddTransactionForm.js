@@ -13,7 +13,8 @@ const TRANSACTION_TYPES = [
     { value: 'credit', label: 'Cartão', icon: CreditCard, color: 'text-purple-400', active: 'bg-purple-500/20 border-purple-500/40 text-purple-300' },
 ];
 
-export default function AddTransactionForm({ onAdd, cartoes = [] }) {
+export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Alle', partner2 = 'Esposa' }) {
+    const [quemPagou, setQuemPagou] = useState('Dividido');
     const [formData, setFormData] = useState({
         description: '',
         amount: '',
@@ -38,6 +39,13 @@ export default function AddTransactionForm({ onAdd, cartoes = [] }) {
             return;
         }
 
+        let finalQuem = formData.quem;
+        if (formData.quem === 'Comum') {
+            if (quemPagou === 'Eu') finalQuem = 'Comum - Eu';
+            else if (quemPagou === 'Outro') finalQuem = 'Comum - Outro';
+            else finalQuem = 'Comum';
+        }
+
         if (formData.type === 'credit' && formData.installments > 1) {
             const installmentAmount = Math.round((baseAmount / formData.installments) * 100) / 100;
             const baseDate = new Date(formData.date);
@@ -57,7 +65,7 @@ export default function AddTransactionForm({ onAdd, cartoes = [] }) {
                     installmentInfo: `${i + 1}/${formData.installments}`,
                     pago: formData.pago,
                     payment_method: 'credit',
-                    quem: formData.quem,
+                    quem: finalQuem,
                     subcategoria: formData.subcategoria,
                     destino: formData.destino,
                 });
@@ -78,7 +86,7 @@ export default function AddTransactionForm({ onAdd, cartoes = [] }) {
                     fixa: true,
                     pago: i === 0 ? formData.pago : false,
                     payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
-                    quem: formData.quem,
+                    quem: finalQuem,
                     subcategoria: formData.subcategoria,
                     destino: formData.destino,
                 });
@@ -95,12 +103,13 @@ export default function AddTransactionForm({ onAdd, cartoes = [] }) {
                 pago: formData.pago,
                 fixa: false,
                 payment_method: formData.type === 'credit' ? 'credit' : (formData.type === 'income' ? 'checking' : formData.payment_method),
-                quem: formData.quem,
+                quem: finalQuem,
                 subcategoria: formData.subcategoria,
                 destino: formData.destino,
             });
         }
 
+        setQuemPagou('Dividido');
         setFormData({
             description: '',
             amount: '',
@@ -286,17 +295,44 @@ export default function AddTransactionForm({ onAdd, cartoes = [] }) {
                             </select>
                         </div>
                         <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Responsável (Quem?)</label>
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">De quem é? (Responsável)</label>
                             <select
                                 value={formData.quem}
                                 onChange={(e) => setFormData({ ...formData, quem: e.target.value })}
                                 className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
                             >
-                                <option value="Comum">Comum</option>
-                                <option value="Eu">Eu</option>
-                                <option value="Outro">Outro</option>
+                                <option value="Comum">Comum (Dividido 50/50)</option>
+                                <option value="Eu">{partner1} (Pessoal)</option>
+                                <option value="Outro">{partner2} (Pessoal)</option>
                             </select>
                         </div>
+
+                        {/* Sub-seletor para "Quem pagou?" quando for Comum */}
+                        {formData.quem === 'Comum' && (
+                            <div className="space-y-1.5 p-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 animate-fade-in">
+                                <label className="text-xs font-medium text-indigo-300 uppercase tracking-wide">Quem pagou?</label>
+                                <div className="flex gap-2">
+                                    {[
+                                        { value: 'Dividido', label: 'Dividido (Geral)' },
+                                        { value: 'Eu', label: partner1 },
+                                        { value: 'Outro', label: partner2 }
+                                    ].map((opt) => (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            onClick={() => setQuemPagou(opt.value)}
+                                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                                                quemPagou === opt.value
+                                                ? 'bg-indigo-500/20 text-white border-indigo-500/50 shadow-md'
+                                                : 'bg-secondary/30 text-slate-500 border-slate-800 hover:text-slate-400'
+                                            }`}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Subcategory & Destino row */}

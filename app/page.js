@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import Dashboard from '@/components/Dashboard';
 import TransactionList from '@/components/TransactionList';
 import AddTransactionForm from '@/components/AddTransactionForm';
-import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -16,10 +16,23 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [viewDate, setViewDate] = useState(new Date());
   
+  // Nomes dos parceiros para compartilhamento
+  const [partner1, setPartner1] = useState('Alle');
+  const [partner2, setPartner2] = useState('Esposa');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
   // States para edição de cartão
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
   const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
+
+  // Carrega nomes do localStorage
+  useEffect(() => {
+    const p1 = localStorage.getItem('fincasal_partner1');
+    const p2 = localStorage.getItem('fincasal_partner2');
+    if (p1) setPartner1(p1);
+    if (p2) setPartner2(p2);
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -201,9 +214,18 @@ export default function Home() {
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/10 border border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.1)]">
               <Sparkles className="h-6 w-6 text-indigo-400" />
             </div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">Minhas Finanças</h1>
-              <p className="text-slate-400 font-medium text-sm">Controle Total Supabase</p>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <h1 className="text-3xl font-bold tracking-tight text-white">Minhas Finanças</h1>
+                <button 
+                  onClick={() => setIsSettingsOpen(true)} 
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 hover:border-slate-600 transition-all text-slate-400 hover:text-white cursor-pointer"
+                  title="Configurações do Casal"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-slate-400 font-medium text-sm">Controle Compartilhado ({partner1} & {partner2})</p>
             </div>
           </div>
           
@@ -220,7 +242,11 @@ export default function Home() {
           </div>
         </header>
 
-        <Dashboard transactions={monthTransactions} />
+        <Dashboard 
+          transactions={monthTransactions} 
+          partner1={partner1} 
+          partner2={partner2} 
+        />
 
         {/* Card de Resumo de Pendências (Estilo Print) */}
         {pendingUrgentTransactions.length > 0 && (
@@ -327,13 +353,20 @@ export default function Home() {
         </section>
 
         <div className="grid gap-8 lg:grid-cols-2" id="transactions-list">
-          <AddTransactionForm onAdd={handleAddTransaction} cartoes={cartoes} />
+          <AddTransactionForm 
+            onAdd={handleAddTransaction} 
+            cartoes={cartoes} 
+            partner1={partner1} 
+            partner2={partner2} 
+          />
           <TransactionList 
             transactions={monthTransactions} 
             onDelete={handleDeleteTransaction} 
             onTogglePaid={handleTogglePaid}
             statusFilter={transactionStatusFilter}
             onStatusFilterChange={setTransactionStatusFilter}
+            partner1={partner1} 
+            partner2={partner2} 
           />
         </div>
       </div>
@@ -403,6 +436,59 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Configurações do Casal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1e293b] border border-slate-700 w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-6 animate-scale-in">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Settings className="h-5 w-5 text-indigo-400" /> Configurações do Casal
+              </h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-white p-1">
+                <Plus className="h-6 w-6 rotate-45" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do Parceiro 1</label>
+                <input 
+                  type="text"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                  value={partner1}
+                  onChange={(e) => {
+                    setPartner1(e.target.value);
+                    localStorage.setItem('fincasal_partner1', e.target.value);
+                  }}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do Parceiro 2 (Esposa)</label>
+                <input 
+                  type="text"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                  value={partner2}
+                  onChange={(e) => {
+                    setPartner2(e.target.value);
+                    localStorage.setItem('fincasal_partner2', e.target.value);
+                  }}
+                />
+              </div>
+
+              <div className="pt-4">
+                <button 
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20"
+                >
+                  SALVAR
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
