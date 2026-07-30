@@ -13,7 +13,9 @@ export default function TransactionList({
     statusFilter = 'all', 
     onStatusFilterChange, 
     partner1 = 'Alle', 
-    partner2 = 'Esposa' 
+    partner2 = 'Kelly',
+    selectedCardFilter,
+    onClearCardFilter 
 }) {
     const [filter, setFilter] = useState('all'); // all | income | expense | credit
     const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum
@@ -27,11 +29,15 @@ export default function TransactionList({
             return dateB - dateA;
         });
         
-        if (filter !== 'all') {
+        if (selectedCardFilter) {
+            list = list.filter(t => t && t.card_name === selectedCardFilter);
+        } else if (filter !== 'all') {
             list = list.filter(t => t && t.type === filter);
         }
+
         if (statusFilter === 'pending') {
-            list = list.filter(t => t && !t.pago);
+            // Despesas a pagar de conta corrente (compras de cartão são pagas na fatura)
+            list = list.filter(t => t && !t.pago && t.type === 'expense');
         } else if (statusFilter === 'paid') {
             list = list.filter(t => t && t.pago);
         }
@@ -46,7 +52,7 @@ export default function TransactionList({
         }
 
         return list;
-    }, [transactions, filter, statusFilter, spenderFilter]);
+    }, [transactions, filter, statusFilter, spenderFilter, selectedCardFilter]);
 
     const displayedTransactions = showAll ? filteredTransactions : filteredTransactions.slice(0, 15);
 
@@ -123,6 +129,7 @@ export default function TransactionList({
                         ))}
                     </div>
                     
+
                     <div className="flex gap-2 p-1 rounded-xl bg-slate-900/50 border border-slate-800">
                         {[
                             { value: 'all', label: '📄 Todas' },
@@ -174,6 +181,7 @@ export default function TransactionList({
                             const config = typeConfig[t.type] || typeConfig.expense;
                             const Icon = config.icon;
                             const isPaid = t.pago;
+                            const quemDisplay = (t.quem === 'Esposa' || t.quem === 'Kelly') ? 'Kelly' : t.quem;
                             
                             return (
                                 <div
@@ -197,12 +205,13 @@ export default function TransactionList({
                                             )}
                                         </button>
                                         <div className="min-w-0">
-                                            <p className={`text-sm font-medium leading-tight truncate ${isPaid ? 'text-slate-400 line-through decoration-slate-500/50' : ''}`}>
-                                                {t.description}
-                                            </p>
-                                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                            <div className="flex items-center gap-2">
+                                                <p className={`text-sm font-medium leading-tight truncate ${isPaid ? 'text-slate-400 line-through decoration-slate-500/50' : ''}`}>
+                                                    {t.description}
+                                                </p>
                                                 {getSpenderBadge(t.quem)}
-                                                {t.quem && <span className="text-muted-foreground/40">•</span>}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 mt-0.5">
                                                 <span className="text-xs text-muted-foreground">{t.category}</span>
                                                 <span className="text-muted-foreground/40">•</span>
                                                 <span className="text-xs text-muted-foreground">{formatDate(t.date)}</span>

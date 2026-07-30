@@ -32,7 +32,7 @@ const CustomTooltip = ({ active, payload, label }) => {
     return null;
 };
 
-export default function Dashboard({ transactions = [], partner1 = 'Alle', partner2 = 'Esposa' }) {
+export default function Dashboard({ transactions = [], partner1 = 'Alle', partner2 = 'Kelly' }) {
     const summary = useMemo(() => {
         const txs = Array.isArray(transactions) ? transactions : [];
         const income = txs
@@ -55,15 +55,46 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
             .filter((t) => t && t.fixa && t.pago)
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        const checkingBalance = income - checkingPaidExpenses;
-        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const limitDate = new Date(today);
+        limitDate.setDate(today.getDate() + 7);
+
+        let efetivadas = 0;
+        let proximoVencimento = 0;
+        let vencidas = 0;
+        let distanteVencimento = 0;
+
+        txs.filter(t => t && (t.type === 'expense' || t.type === 'credit')).forEach(t => {
+            const amt = Number(t.amount || 0);
+            if (t.pago) {
+                efetivadas += amt;
+            } else {
+                const d = new Date(t.date + 'T00:00:00');
+                if (d < today) {
+                    vencidas += amt;
+                } else if (d <= limitDate) {
+                    proximoVencimento += amt;
+                } else {
+                    distanteVencimento += amt;
+                }
+            }
+        });
+
+        const totalDespesasAll = efetivadas + proximoVencimento + vencidas + distanteVencimento;
+
         return { 
             income, 
             expense: checkingPaidExpenses + creditExpenses, 
             balance: checkingBalance, 
             creditTotal: creditExpenses,
             fixedTotal,
-            fixedPaid
+            fixedPaid,
+            efetivadas,
+            proximoVencimento,
+            vencidas,
+            distanteVencimento,
+            totalDespesasAll
         };
     }, [transactions]);
 
@@ -402,6 +433,65 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Discriminação das Despesas Card (Estilo App Exemplo) */}
+            <Card className="animate-slide-up border-slate-800 bg-[#1e293b]/60">
+                <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                            📊 Discriminação das Despesas
+                        </CardTitle>
+                        <span className="text-xs font-bold text-slate-400">Total: {formatCurrency(summary.totalDespesasAll)}</span>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        {/* Efetivadas */}
+                        <div className="flex items-center justify-between p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                            <div className="flex items-center gap-2.5">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-black text-slate-950">
+                                    {summary.totalDespesasAll > 0 ? Math.round((summary.efetivadas / summary.totalDespesasAll) * 100) : 0}%
+                                </span>
+                                <span className="text-xs font-bold text-emerald-300">Efetivadas</span>
+                            </div>
+                            <span className="text-xs font-extrabold text-emerald-400">{formatCurrency(summary.efetivadas)}</span>
+                        </div>
+
+                        {/* Próximo do vencimento */}
+                        <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                            <div className="flex items-center gap-2.5">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-slate-950">
+                                    {summary.totalDespesasAll > 0 ? Math.round((summary.proximoVencimento / summary.totalDespesasAll) * 100) : 0}%
+                                </span>
+                                <span className="text-xs font-bold text-amber-300">Próximo ao Vencimento</span>
+                            </div>
+                            <span className="text-xs font-extrabold text-amber-400">{formatCurrency(summary.proximoVencimento)}</span>
+                        </div>
+
+                        {/* Vencidas */}
+                        <div className="flex items-center justify-between p-3 rounded-2xl bg-red-500/10 border border-red-500/20">
+                            <div className="flex items-center gap-2.5">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs font-black text-white">
+                                    {summary.totalDespesasAll > 0 ? Math.round((summary.vencidas / summary.totalDespesasAll) * 100) : 0}%
+                                </span>
+                                <span className="text-xs font-bold text-red-300">Vencidas</span>
+                            </div>
+                            <span className="text-xs font-extrabold text-red-400">{formatCurrency(summary.vencidas)}</span>
+                        </div>
+
+                        {/* Distante do vencimento */}
+                        <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-800 border border-slate-700">
+                            <div className="flex items-center gap-2.5">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-700 text-xs font-black text-slate-200">
+                                    {summary.totalDespesasAll > 0 ? Math.round((summary.distanteVencimento / summary.totalDespesasAll) * 100) : 0}%
+                                </span>
+                                <span className="text-xs font-bold text-slate-300">A Vencer (Futuras)</span>
+                            </div>
+                            <span className="text-xs font-extrabold text-slate-300">{formatCurrency(summary.distanteVencimento)}</span>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 }

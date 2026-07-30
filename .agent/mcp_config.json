@@ -1,5 +1,17 @@
 {
     "mcpServers": {
+        "obsidian": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@oleksandrkucherenko/mcp-obsidian"
+            ],
+            "env": {
+                "API_KEY": "eb04334bf872a2e70d63601a54b932f8b7e8eda158f8a39a33a7acd48dcf7b65",
+                "API_URLS": "[\"http://127.0.0.1:27124\"]",
+                "NODE_TLS_REJECT_UNAUTHORIZED": "0"
+            }
+        },
         "context7": {
             "command": "npx",
             "args": [
@@ -16,9 +28,6 @@
                 "mcp"
             ]
         }
-        //other mcp servers
     }
 }
-
 // setup mcp server in  ~/.gemini\antigravity\mcp_config.json
-

@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import Dashboard from '@/components/Dashboard';
 import TransactionList from '@/components/TransactionList';
 import AddTransactionForm from '@/components/AddTransactionForm';
-import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
+import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, Settings } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 
-const BUILD_TIME = '24/04/2026 18:35';
+const BUILD_TIME = '30/07/2026 13:45';
 
 export default function Home() {
   const [transactions, setTransactions] = useState([]);
@@ -16,22 +16,31 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [viewDate, setViewDate] = useState(new Date());
   
-  // Nomes dos parceiros para compartilhamento
+  // Nomes dos parceiros para compartilhamento (Padrão: Alle & Kelly)
   const [partner1, setPartner1] = useState('Alle');
-  const [partner2, setPartner2] = useState('Esposa');
+  const [partner2, setPartner2] = useState('Kelly');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // States para edição de cartão
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
   const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
+  const [selectedCardFilter, setSelectedCardFilter] = useState(null);
 
-  // Carrega nomes do localStorage
+  // State para reset de transações
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetConfirmInput, setResetConfirmInput] = useState('');
+
+  // Carrega nomes do localStorage (padrão Kelly se não definido)
   useEffect(() => {
     const p1 = localStorage.getItem('fincasal_partner1');
     const p2 = localStorage.getItem('fincasal_partner2');
     if (p1) setPartner1(p1);
-    if (p2) setPartner2(p2);
+    if (p2 && p2 !== 'Esposa') setPartner2(p2);
+    else {
+      setPartner2('Kelly');
+      localStorage.setItem('fincasal_partner2', 'Kelly');
+    }
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -64,36 +73,35 @@ export default function Home() {
     return transactions.filter(t => {
       const d = new Date(t.date);
       const isCurrentMonth = d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
-      const isPending = !t.pago && (t.type === 'expense' || t.type === 'credit');
-      // Mostra transações do mês OU qualquer despesa que ainda não foi paga
-      return isCurrentMonth || isPending;
+      const isPendingExpense = !t.pago && t.type === 'expense';
+      return isCurrentMonth || isPendingExpense;
     });
   }, [transactions, viewDate]);
 
   const cardsSummary = useMemo(() => {
-    const prevMonthDate = new Date(viewDate);
-    prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
-    
-    const prevMonth = prevMonthDate.getMonth();
-    const prevYear = prevMonthDate.getFullYear();
+    const viewMonth = viewDate.getMonth();
+    const viewYear = viewDate.getFullYear();
 
     return cartoes.map(card => {
       const matches = transactions.filter(t => {
-        const d = new Date(t.date + 'T12:00:00');
+        const d = new Date(t.date);
         return t.card_name === card.nome && 
                t.type === 'credit' && 
-               d.getMonth() === prevMonth && 
-               d.getFullYear() === prevYear;
+               d.getMonth() === viewMonth && 
+               d.getFullYear() === viewYear;
       });
 
-      const faturaMesAnterior = matches.reduce((acc, t) => acc + Number(t.amount), 0);
-      
-      const limite = Number(card.limite);
+      const faturaAtual = matches.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+      const isPaga = matches.length > 0 && matches.every(t => t.pago);
+      const limite = Number(card.limite || 0);
+
       return {
         ...card,
-        faturaAtual: faturaMesAnterior,
-        disponivel: limite - faturaMesAnterior,
-        percentual: (faturaMesAnterior / limite) * 100
+        faturaAtual,
+        isPaga,
+        totalItems: matches.length,
+        disponivel: limite - faturaAtual,
+        percentual: limite > 0 ? (faturaAtual / limite) * 100 : 0
       };
     });
   }, [cartoes, transactions, viewDate]);
@@ -105,7 +113,7 @@ export default function Home() {
     limitDate.setDate(today.getDate() + 7); // Vencidas ou a vencer em até 7 dias
 
     return transactions.filter(t => {
-      if (t.pago || (t.type !== 'expense' && t.type !== 'credit')) return false;
+      if (t.pago || t.type !== 'expense') return false;
       const tDate = new Date(t.date + 'T00:00:00');
       return tDate <= limitDate;
     });
@@ -155,6 +163,57 @@ export default function Home() {
       console.error('Error deleting transaction:', error.message);
     }
   }, []);
+
+  const handleResetAllTransactions = useCallback(async () => {
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .not('id', 'is', null);
+      if (error) throw error;
+      setTransactions([]);
+      setIsResetModalOpen(false);
+      setResetConfirmInput('');
+      alert('Todas as transações foram apagadas com sucesso!');
+    } catch (error) {
+      console.error('Error resetting transactions:', error.message);
+      alert('Erro ao resetar transações: ' + error.message);
+    }
+  }, []);
+
+  const handlePayInvoice = useCallback(async (cardName, targetStatus) => {
+    try {
+      const viewMonth = viewDate.getMonth();
+      const viewYear = viewDate.getFullYear();
+      const cardTxs = transactions.filter(t => {
+        const d = new Date(t.date);
+        return t.card_name === cardName && 
+               t.type === 'credit' && 
+               d.getMonth() === viewMonth && 
+               d.getFullYear() === viewYear;
+      });
+
+      if (cardTxs.length === 0) {
+        alert(`Nenhuma compra de cartão encontrada no mês atual para o cartão ${cardName}.`);
+        return;
+      }
+
+      const txIds = cardTxs.map(t => t.id);
+
+      const { error } = await supabase
+        .from('transactions')
+        .update({ pago: targetStatus })
+        .in('id', txIds);
+
+      if (error) throw error;
+
+      setTransactions(prev => prev.map(t => txIds.includes(t.id) ? { ...t, pago: targetStatus } : t));
+      alert(targetStatus ? `Fatura do ${cardName} marcada como PAGA com sucesso!` : `Fatura do ${cardName} REABERTA!`);
+    } catch (error) {
+      console.error('Error updating invoice status:', error.message);
+      alert('Erro ao atualizar fatura: ' + error.message);
+    }
+  }, [transactions, viewDate]);
 
   const handleTogglePaid = useCallback(async (id, newStatus) => {
     try {
@@ -229,16 +288,27 @@ export default function Home() {
             </div>
           </div>
           
-          <div className="flex items-center gap-4 bg-slate-800/50 p-1.5 rounded-2xl border border-slate-700">
-            <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-slate-700 rounded-xl transition-colors text-slate-400 hover:text-white">
-              <ChevronLeft className="h-5 w-5" />
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsResetModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 hover:border-red-500/50 rounded-2xl text-xs font-bold transition-all cursor-pointer shadow-lg shadow-red-500/5"
+              title="Resetar todas as transações do sistema"
+            >
+              <RotateCcw className="h-4 w-4" />
+              <span className="hidden sm:inline">Resetar Transações</span>
             </button>
-            <span className="text-sm font-bold w-24 text-center text-white uppercase tracking-wider">
-              {monthName}
-            </span>
-            <button onClick={() => changeMonth(1)} className="p-2 hover:bg-slate-700 rounded-xl transition-colors text-slate-400 hover:text-white">
-              <ChevronRight className="h-5 w-5" />
-            </button>
+
+            <div className="flex items-center gap-4 bg-slate-800/50 p-1.5 rounded-2xl border border-slate-700">
+              <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-slate-700 rounded-xl transition-colors text-slate-400 hover:text-white">
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <span className="text-sm font-bold w-24 text-center text-white uppercase tracking-wider">
+                {monthName}
+              </span>
+              <button onClick={() => changeMonth(1)} className="p-2 hover:bg-slate-700 rounded-xl transition-colors text-slate-400 hover:text-white">
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
           </div>
         </header>
 
@@ -291,9 +361,17 @@ export default function Home() {
                       </div>
                       <div>
                         <h3 className="font-bold text-lg text-white">{card.nome}</h3>
-                        <p className="text-xs text-slate-400 uppercase tracking-wider">{card.bandeira}</p>
+                        <p className="text-xs text-slate-400 uppercase tracking-wider">{card.bandeira || 'MasterCard'}</p>
                       </div>
                     </div>
+
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
+                      card.isPaga
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                    }`}>
+                      {card.isPaga ? '✅ Paga' : '⏳ Aberta'}
+                    </span>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 text-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
@@ -335,15 +413,39 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handlePayInvoice(card.nome, !card.isPaga)}
+                        className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-2 cursor-pointer ${
+                          card.isPaga
+                          ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500/30 shadow-lg shadow-emerald-500/20'
+                        }`}
+                      >
+                        {card.isPaga ? '🔄 REABRIR FATURA' : '💳 PAGAR FATURA'}
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setSelectedCardFilter(selectedCardFilter === card.nome ? null : card.nome);
+                          const list = document.getElementById('transactions-list');
+                          list?.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className={`px-3 py-2.5 text-xs font-black rounded-xl transition-all border cursor-pointer ${
+                          selectedCardFilter === card.nome
+                          ? 'bg-purple-500/30 text-purple-300 border-purple-500/50'
+                          : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                        }`}
+                        title="Filtrar compras deste cartão"
+                      >
+                        🔍 COMPRAS
+                      </button>
+                    </div>
                     <button 
                       onClick={() => { setEditingCard(card); setIsEditModalOpen(true); }}
-                      className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-black rounded-xl transition-all border border-slate-700 hover:border-slate-600 flex items-center justify-center gap-2"
+                      className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-[11px] font-bold rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <Edit3 className="h-3.5 w-3.5" /> REAJUSTE
-                    </button>
-                    <button className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2">
-                      <Plus className="h-3.5 w-3.5" /> LANÇAR
+                      <Edit3 className="h-3 w-3" /> Reajustar Limite e Datas
                     </button>
                   </div>
                 </CardContent>
@@ -351,6 +453,21 @@ export default function Home() {
             ))}
           </div>
         </section>
+
+        {/* Filtro de Cartão Ativo (se houver) */}
+        {selectedCardFilter && (
+          <div className="flex items-center justify-between p-3 bg-purple-500/10 border border-purple-500/30 rounded-2xl animate-fade-in">
+            <span className="text-xs font-bold text-purple-300 flex items-center gap-2">
+              💳 Exibindo apenas transações do cartão: <strong className="text-white font-black">{selectedCardFilter}</strong>
+            </span>
+            <button
+              onClick={() => setSelectedCardFilter(null)}
+              className="text-xs font-bold text-purple-400 hover:text-white bg-purple-500/20 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+            >
+              ✕ Ver Todas
+            </button>
+          </div>
+        )}
 
         <div className="grid gap-8 lg:grid-cols-2" id="transactions-list">
           <AddTransactionForm 
@@ -366,7 +483,9 @@ export default function Home() {
             statusFilter={transactionStatusFilter}
             onStatusFilterChange={setTransactionStatusFilter}
             partner1={partner1} 
-            partner2={partner2} 
+            partner2={partner2}
+            selectedCardFilter={selectedCardFilter}
+            onClearCardFilter={() => setSelectedCardFilter(null)}
           />
         </div>
       </div>
@@ -468,7 +587,7 @@ export default function Home() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do Parceiro 2 (Esposa)</label>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do Parceiro 2</label>
                 <input 
                   type="text"
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
@@ -488,6 +607,56 @@ export default function Home() {
                   SALVAR
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Reset de Transações */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1e293b] border border-red-500/40 w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-6 animate-scale-in">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="text-xl font-bold text-red-400 flex items-center gap-2">
+                <AlertTriangle className="h-6 w-6 text-red-500 animate-bounce" /> Resetar Transações
+              </h3>
+              <button onClick={() => { setIsResetModalOpen(false); setResetConfirmInput(''); }} className="text-slate-400 hover:text-white p-1">
+                <Plus className="h-6 w-6 rotate-45" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm text-slate-300">
+                Esta ação irá <strong className="text-red-400">excluir permanentemente todas as transações</strong> do banco de dados. Os cartões permanecerão cadastrados.
+              </p>
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-300">
+                ⚠️ Digite <strong className="font-bold">RESETAR</strong> no campo abaixo para confirmar.
+              </div>
+              <input
+                type="text"
+                placeholder="Digite RESETAR para confirmar"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50 transition-all uppercase"
+                value={resetConfirmInput}
+                onChange={(e) => setResetConfirmInput(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => { setIsResetModalOpen(false); setResetConfirmInput(''); }}
+                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all border border-slate-700 text-xs"
+              >
+                CANCELAR
+              </button>
+              <button
+                type="button"
+                disabled={resetConfirmInput.trim().toUpperCase() !== 'RESETAR'}
+                onClick={handleResetAllTransactions}
+                className="flex-1 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-red-500/20 text-xs flex items-center justify-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" /> APAGAR TUDO
+              </button>
             </div>
           </div>
         </div>

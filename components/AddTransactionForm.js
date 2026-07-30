@@ -13,7 +13,7 @@ const TRANSACTION_TYPES = [
     { value: 'credit', label: 'Cartão', icon: CreditCard, color: 'text-purple-400', active: 'bg-purple-500/20 border-purple-500/40 text-purple-300' },
 ];
 
-export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Alle', partner2 = 'Esposa' }) {
+export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Alle', partner2 = 'Kelly' }) {
     const [quemPagou, setQuemPagou] = useState('Dividido');
     const [formData, setFormData] = useState({
         description: '',
@@ -301,9 +301,9 @@ export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Al
                                 onChange={(e) => setFormData({ ...formData, quem: e.target.value })}
                                 className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
                             >
-                                <option value="Comum">Comum (Dividido 50/50)</option>
-                                <option value="Eu">{partner1} (Pessoal)</option>
-                                <option value="Outro">{partner2} (Pessoal)</option>
+                                <option value="Comum">👥 Comum (Dividido 50/50)</option>
+                                <option value="Eu">👤 {partner1} (Pessoal)</option>
+                                <option value="Outro">👩 {partner2} (Pessoal)</option>
                             </select>
                         </div>
 
