@@ -8,7 +8,7 @@ import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, R
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 
-const BUILD_TIME = '30/07/2026 13:45';
+const BUILD_TIME = '30/07/2026 14:50';
 
 export default function Home() {
   const [transactions, setTransactions] = useState([]);
@@ -21,9 +21,18 @@ export default function Home() {
   const [partner2, setPartner2] = useState('Kelly');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
-  // States para edição de cartão
+  // States para edição e adição de cartão
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
+  const [isAddCardModalOpen, setIsAddCardModalOpen] = useState(false);
+  const [newCardData, setNewCardData] = useState({
+    nome: '',
+    limite: '',
+    vencimento: '10',
+    fechamento: '3',
+    bandeira: 'MasterCard'
+  });
+
   const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
   const [selectedCardFilter, setSelectedCardFilter] = useState(null);
 
@@ -228,6 +237,36 @@ export default function Home() {
     }
   }, []);
 
+  const handleAddCard = async (e) => {
+    e.preventDefault();
+    if (!newCardData.nome.trim()) {
+      alert('Por favor, informe o nome do cartão.');
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('cartoes')
+        .insert([{
+          nome: newCardData.nome.trim(),
+          limite: Number(newCardData.limite || 0),
+          vencimento: Number(newCardData.vencimento || 10),
+          fechamento: Number(newCardData.fechamento || 3),
+          bandeira: newCardData.bandeira || 'MasterCard'
+        }])
+        .select();
+
+      if (error) throw error;
+
+      setCartoes(prev => [...prev, data[0]]);
+      setIsAddCardModalOpen(false);
+      setNewCardData({ nome: '', limite: '', vencimento: '10', fechamento: '3', bandeira: 'MasterCard' });
+      alert(`Cartão ${data[0].nome} adicionado com sucesso!`);
+    } catch (error) {
+      console.error('Error adding card:', error.message);
+      alert('Erro ao cadastrar cartão: ' + error.message);
+    }
+  };
+
   const handleUpdateCard = async (e) => {
     e.preventDefault();
     try {
@@ -247,6 +286,20 @@ export default function Home() {
       setEditingCard(null);
     } catch (error) {
       alert('Erro ao atualizar cartão: ' + error.message);
+    }
+  };
+
+  const handleDeleteCard = async (cardId, cardName) => {
+    if (!confirm(`Tem certeza que deseja excluir o cartão ${cardName}?`)) return;
+    try {
+      const { error } = await supabase.from('cartoes').delete().eq('id', cardId);
+      if (error) throw error;
+      setCartoes(prev => prev.filter(c => c.id !== cardId));
+      setIsEditModalOpen(false);
+      setEditingCard(null);
+      alert(`Cartão ${cardName} removido com sucesso.`);
+    } catch (error) {
+      alert('Erro ao remover cartão: ' + error.message);
     }
   };
 
@@ -342,10 +395,19 @@ export default function Home() {
         )}
 
         <section className="space-y-6">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <CreditCard className="h-5 w-5 text-indigo-400" />
-            Cartões de Crédito
-          </h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-indigo-400" />
+              Cartões de Crédito
+            </h2>
+            <button 
+              onClick={() => setIsAddCardModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition-all cursor-pointer shadow-lg shadow-indigo-500/20 border border-indigo-400/30 hover:scale-105"
+            >
+              <Plus className="h-4 w-4" />
+              Adicionar Novo Cartão
+            </button>
+          </div>
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {cardsSummary.map((card) => (
@@ -355,7 +417,8 @@ export default function Home() {
                     <div className="flex items-center gap-3">
                       <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-xl ${
                         card.nome === 'Nubank' ? 'bg-[#8a05be]' : 
-                        card.nome === 'Inter' ? 'bg-[#ff7a00]' : 'bg-[#17469e]'
+                        card.nome === 'Inter' ? 'bg-[#ff7a00]' : 
+                        card.nome === 'Sicoob' ? 'bg-[#003641]' : 'bg-[#17469e]'
                       }`}>
                         {card.nome.charAt(0)}
                       </div>
@@ -490,6 +553,110 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Modal de Adicionar Novo Cartão */}
+      {isAddCardModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1e293b] border border-indigo-500/30 w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-6 animate-scale-in">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <CreditCard className="h-5 w-5 text-indigo-400" /> Adicionar Novo Cartão
+              </h3>
+              <button onClick={() => setIsAddCardModalOpen(false)} className="text-slate-400 hover:text-white p-1">
+                <Plus className="h-6 w-6 rotate-45" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCard} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do Cartão</label>
+                <input 
+                  type="text"
+                  placeholder="Ex: C6 Bank, Santander, XP..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                  value={newCardData.nome}
+                  onChange={(e) => setNewCardData({...newCardData, nome: e.target.value})}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Bandeira</label>
+                  <select 
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                    value={newCardData.bandeira}
+                    onChange={(e) => setNewCardData({...newCardData, bandeira: e.target.value})}
+                  >
+                    <option value="MasterCard">MasterCard</option>
+                    <option value="Visa">Visa</option>
+                    <option value="Elo">Elo</option>
+                    <option value="Amex">American Express</option>
+                    <option value="Outra">Outra</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Limite Total (R$)</label>
+                  <input 
+                    type="number"
+                    placeholder="Ex: 5000"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={newCardData.limite}
+                    onChange={(e) => setNewCardData({...newCardData, limite: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dia Vencimento</label>
+                  <input 
+                    type="number"
+                    min="1"
+                    max="31"
+                    placeholder="Ex: 10"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={newCardData.vencimento}
+                    onChange={(e) => setNewCardData({...newCardData, vencimento: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dia Fechamento</label>
+                  <input 
+                    type="number"
+                    min="1"
+                    max="31"
+                    placeholder="Ex: 3"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={newCardData.fechamento}
+                    onChange={(e) => setNewCardData({...newCardData, fechamento: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsAddCardModalOpen(false)}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all border border-slate-700"
+                >
+                  CANCELAR
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20"
+                >
+                  CADASTRAR
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Edição de Cartão */}
       {isEditModalOpen && editingCard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
@@ -539,7 +706,17 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="pt-4 flex gap-3">
+              <div className="pt-2 flex justify-between items-center">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteCard(editingCard.id, editingCard.nome)}
+                  className="text-xs font-bold text-red-400 hover:text-red-300 flex items-center gap-1.5 p-1"
+                >
+                  <Trash2 className="h-4 w-4" /> Excluir este Cartão
+                </button>
+              </div>
+
+              <div className="pt-2 flex gap-3">
                 <button 
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
