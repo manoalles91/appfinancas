@@ -244,23 +244,28 @@ export default function Home() {
       return;
     }
     try {
+      const cardPayload = {
+        id: crypto.randomUUID(),
+        nome: newCardData.nome.trim(),
+        limite: Number(newCardData.limite || 0),
+        vencimento: Number(newCardData.vencimento || 10),
+        fechamento: Number(newCardData.fechamento || 3),
+        bandeira: newCardData.bandeira || 'MasterCard'
+      };
+
       const { data, error } = await supabase
         .from('cartoes')
-        .insert([{
-          nome: newCardData.nome.trim(),
-          limite: Number(newCardData.limite || 0),
-          vencimento: Number(newCardData.vencimento || 10),
-          fechamento: Number(newCardData.fechamento || 3),
-          bandeira: newCardData.bandeira || 'MasterCard'
-        }])
+        .insert([cardPayload])
         .select();
 
       if (error) throw error;
 
-      setCartoes(prev => [...prev, data[0]]);
+      const addedCard = (data && data.length > 0) ? data[0] : cardPayload;
+
+      setCartoes(prev => [...prev, addedCard]);
       setIsAddCardModalOpen(false);
       setNewCardData({ nome: '', limite: '', vencimento: '10', fechamento: '3', bandeira: 'MasterCard' });
-      alert(`Cartão ${data[0].nome} adicionado com sucesso!`);
+      alert(`Cartão ${addedCard.nome} adicionado com sucesso!`);
     } catch (error) {
       console.error('Error adding card:', error.message);
       alert('Erro ao cadastrar cartão: ' + error.message);
