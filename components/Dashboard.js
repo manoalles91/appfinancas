@@ -43,6 +43,8 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
             .filter((t) => t && t.payment_method === 'checking' && (t.type === 'expense' || t.type === 'credit') && t.pago)
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
+        const checkingBalance = income - checkingPaidExpenses;
+
         const creditExpenses = txs
             .filter((t) => t && t.payment_method === 'credit')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
