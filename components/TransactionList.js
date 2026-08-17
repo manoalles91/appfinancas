@@ -206,7 +206,23 @@ export default function TransactionList({
         );
     };
 
-    const renderSection = (title, emoji, items, total, count, showAll, setShowAll, accentText, accentValue) => {
+    const monthLabel = (key) => {
+        const d = new Date(key + '-01T00:00:00');
+        return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^./, (c) => c.toUpperCase());
+    };
+
+    const groupByMonth = (list) => {
+        const groups = {};
+        list.forEach(t => {
+            const key = t.date ? t.date.slice(0, 7) : 'sem-data';
+            (groups[key] = groups[key] || []).push(t);
+        });
+        return Object.keys(groups)
+            .sort((a, b) => a === 'sem-data' ? 1 : b === 'sem-data' ? -1 : a.localeCompare(b))
+            .map(key => ({ key, label: key === 'sem-data' ? 'Sem data' : monthLabel(key), items: groups[key] }));
+    };
+
+    const renderSection = (title, emoji, items, total, count, showAll, setShowAll, accentText, accentValue, groupByMonthFlag) => {
         if (items.length === 0 && count === 0) return null;
         return (
             <div className="space-y-2">
@@ -219,7 +235,21 @@ export default function TransactionList({
                     </span>
                 </div>
                 <div className="space-y-2">
-                    {items.map(renderItem)}
+                    {groupByMonthFlag ? (
+                        groupByMonth(items).map(g => (
+                            <div key={g.key} className="space-y-2">
+                                <div className="flex items-center justify-between px-1 pt-1">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-400/80">📅 {g.label}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        {g.items.length} {g.items.length === 1 ? 'item' : 'itens'} • <span className="font-bold text-amber-300">{formatCurrency(sum(g.items))}</span>
+                                    </span>
+                                </div>
+                                <div className="space-y-2">{g.items.map(renderItem)}</div>
+                            </div>
+                        ))
+                    ) : (
+                        items.map(renderItem)
+                    )}
                 </div>
                 {count > 15 && !showAll && (
                     <button
@@ -321,8 +351,8 @@ export default function TransactionList({
             </CardHeader>
             <CardContent>
                 <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
-                    {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingList.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300')}
-                    {showPaid && renderSection('Pagas', '✅', displayedPaid, paidTotal, paidList.length, showAllPaid, setShowAllPaid, 'text-emerald-400', 'text-emerald-300')}
+                    {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingList.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300', true)}
+                    {showPaid && renderSection('Pagas', '✅', displayedPaid, paidTotal, paidList.length, showAllPaid, setShowAllPaid, 'text-emerald-400', 'text-emerald-300', false)}
                     {pendingList.length === 0 && paidList.length === 0 && (
                         <p className="text-center text-muted-foreground text-sm py-8">Nenhuma transação encontrada.</p>
                     )}
