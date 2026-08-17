@@ -2,9 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCircle2, Clock, Lock } from 'lucide-react';
-import CategoryIcon from '@/components/CategoryIcon';
 
 export default function TransactionList({ 
     transactions, 
@@ -19,7 +17,8 @@ export default function TransactionList({
 }) {
     const [filter, setFilter] = useState('all'); // all | income | expense | credit
     const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum
-    const [showAll, setShowAll] = useState(false);
+    const [showAllPending, setShowAllPending] = useState(false);
+    const [showAllPaid, setShowAllPaid] = useState(false);
 
     const filteredTransactions = useMemo(() => {
         const txs = Array.isArray(transactions) ? transactions : [];
@@ -35,14 +34,6 @@ export default function TransactionList({
             list = list.filter(t => t && t.type === filter);
         }
 
-        if (statusFilter === 'pending') {
-            // Despesas a pagar de conta corrente (compras de cartão são pagas na fatura)
-            list = list.filter(t => t && !t.pago && t.type === 'expense');
-        } else if (statusFilter === 'paid') {
-            list = list.filter(t => t && t.pago);
-        }
-
-        // Filter by Spender
         if (spenderFilter === 'Eu') {
             list = list.filter(t => t && (t.quem === 'Eu' || t.quem === 'Comum - Eu'));
         } else if (spenderFilter === 'Outro') {
@@ -52,9 +43,22 @@ export default function TransactionList({
         }
 
         return list;
-    }, [transactions, filter, statusFilter, spenderFilter, selectedCardFilter]);
+    }, [transactions, filter, spenderFilter, selectedCardFilter]);
 
-    const displayedTransactions = showAll ? filteredTransactions : filteredTransactions.slice(0, 15);
+    const pendingList = useMemo(() => filteredTransactions.filter(t => !t.pago), [filteredTransactions]);
+    const paidList = useMemo(() => filteredTransactions.filter(t => t.pago), [filteredTransactions]);
+
+    const sum = (list) => list.reduce((acc, t) => acc + (t.amount || 0), 0);
+    const pendingTotal = sum(pendingList);
+    const paidTotal = sum(paidList);
+    const grandTotal = pendingTotal + paidTotal;
+    const paidRatio = grandTotal > 0 ? Math.round((paidTotal / grandTotal) * 100) : 0;
+
+    const showPending = statusFilter === 'all' || statusFilter === 'pending';
+    const showPaid = statusFilter === 'all' || statusFilter === 'paid';
+
+    const displayedPending = showAllPending ? pendingList : pendingList.slice(0, 15);
+    const displayedPaid = showAllPaid ? paidList : paidList.slice(0, 15);
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
@@ -83,6 +87,16 @@ export default function TransactionList({
         { value: 'credit', label: 'Cartão' },
     ];
 
+    const isOverdue = (t) => {
+        if (t.pago || t.type === 'credit') return false;
+        if (!t.date) return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const due = new Date(t.date);
+        due.setHours(0, 0, 0, 0);
+        return due < today;
+    };
+
     const getSpenderBadge = (quem) => {
         if (quem === 'Eu') {
             return <span className="text-[9px] font-black uppercase bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/25">{partner1}</span>;
@@ -102,6 +116,124 @@ export default function TransactionList({
         return null;
     };
 
+    const renderItem = (t) => {
+        const config = typeConfig[t.type] || typeConfig.expense;
+        const isPaid = t.pago;
+        const overdue = isOverdue(t);
+
+        return (
+            <div
+                key={t.id}
+                className={`group flex items-center justify-between rounded-lg p-3 transition-all duration-200 ${
+                    isPaid ? 'bg-secondary/10 opacity-80' : 'hover:bg-secondary/30'
+                }`}
+            >
+                <div className="flex items-center gap-3 min-w-0">
+                    <button 
+                        onClick={() => onTogglePaid && onTogglePaid(t.id, !isPaid)}
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all cursor-pointer hover:scale-110 ${
+                            isPaid ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-amber-500/10 hover:bg-amber-500/30'
+                        }`}
+                        title={isPaid ? "Marcar como pendente" : "Marcar como PAGO ✓"}
+                    >
+                        {isPaid ? (
+                            <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+                        ) : (
+                            <Clock className="h-6 w-6 text-amber-500" />
+                        )}
+                    </button>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <p className={`text-sm font-medium leading-tight truncate ${isPaid ? 'text-slate-400 line-through decoration-slate-500/50' : ''}`}>
+                                {t.description}
+                            </p>
+                            {getSpenderBadge(t.quem)}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-xs text-muted-foreground">{t.category}</span>
+                            <span className="text-muted-foreground/40">•</span>
+                            <span className={`text-xs ${overdue ? 'font-bold text-red-400' : 'text-muted-foreground'}`}>{formatDate(t.date)}</span>
+                            {overdue && (
+                                <span className="text-[9px] font-black uppercase bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded-full border border-red-500/25">Vencida</span>
+                            )}
+                            {t.fixa && (
+                                <>
+                                    <span className="text-muted-foreground/40">•</span>
+                                    <span className="flex items-center gap-0.5 text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1 rounded">
+                                        <Lock className="h-2.5 w-2.5" /> FIXA
+                                    </span>
+                                </>
+                            )}
+                            {t.subcategoria && (
+                                <>
+                                    <span className="text-muted-foreground/40">•</span>
+                                    <span className="text-xs text-indigo-300/70 italic">{t.subcategoria}</span>
+                                </>
+                            )}
+                            {t.destino && (
+                                <>
+                                    <span className="text-muted-foreground/40">•</span>
+                                    <span className="text-xs text-slate-500">📍 {t.destino}</span>
+                                </>
+                            )}
+                            {t.card_name && (
+                                <>
+                                    <span className="text-muted-foreground/40">•</span>
+                                    <span className="text-xs text-purple-400/70">{t.card_name}</span>
+                                </>
+                            )}
+                            {t.installment_info && (
+                                <span className="text-xs text-purple-300/50 ml-0.5">({t.installment_info})</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <span className={`text-sm font-semibold ${isPaid ? 'text-slate-400' : config.color}`}>
+                        {config.sign}{formatCurrency(t.amount)}
+                    </span>
+                    {onDelete && (
+                        <button
+                            onClick={() => onDelete(t.id)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/20 cursor-pointer"
+                            title="Excluir"
+                        >
+                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    const renderSection = (title, emoji, items, total, count, showAll, setShowAll, accentText, accentValue) => {
+        if (items.length === 0 && count === 0) return null;
+        return (
+            <div className="space-y-2">
+                <div className="flex items-center justify-between pt-1">
+                    <span className={`text-[10px] font-black uppercase tracking-wider ${accentText}`}>
+                        {emoji} {title}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                        {count} {count === 1 ? 'item' : 'itens'} • <span className={`font-bold ${accentValue}`}>{formatCurrency(total)}</span>
+                    </span>
+                </div>
+                <div className="space-y-2">
+                    {items.map(renderItem)}
+                </div>
+                {count > 15 && !showAll && (
+                    <button
+                        onClick={() => setShowAll(true)}
+                        className="flex w-full items-center justify-center gap-1 rounded-lg py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-all cursor-pointer"
+                    >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                        Ver mais ({count - 15} restantes)
+                    </button>
+                )}
+            </div>
+        );
+    };
+
     return (
         <Card className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
             <CardHeader className="pb-3">
@@ -109,16 +241,32 @@ export default function TransactionList({
                     <CardTitle className="text-base">Transações</CardTitle>
                     <span className="text-xs text-muted-foreground">{filteredTransactions.length} itens</span>
                 </div>
-                {/* Filters */}
+
                 <div className="flex flex-col gap-3 pt-2">
-                    <div className="flex items-center justify-center gap-2 p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                        <span className="text-[10px] text-amber-400 font-bold uppercase">💡 Clique no relógio para marcar como PAGO</span>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">⏳ A Pagar</p>
+                            <p className="text-lg font-bold text-amber-300 leading-tight">{formatCurrency(pendingTotal)}</p>
+                            <p className="text-[10px] text-amber-400/70">{pendingList.length} {pendingList.length === 1 ? 'item' : 'itens'}</p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">✅ Pagas</p>
+                            <p className="text-lg font-bold text-emerald-300 leading-tight">{formatCurrency(paidTotal)}</p>
+                            <p className="text-[10px] text-emerald-400/70">{paidList.length} {paidList.length === 1 ? 'item' : 'itens'}</p>
+                        </div>
                     </div>
+                    <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div
+                            className="h-full bg-gradient-to-r from-emerald-500/70 to-emerald-400 transition-all duration-500"
+                            style={{ width: `${paidRatio}%` }}
+                        />
+                    </div>
+
                     <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                         {filterButtons.map((f) => (
                             <button
                                 key={f.value}
-                                onClick={() => { setFilter(f.value); setShowAll(false); }}
+                                onClick={() => { setFilter(f.value); setShowAllPending(false); setShowAllPaid(false); }}
                                 className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-200 cursor-pointer whitespace-nowrap ${filter === f.value
                                         ? 'bg-primary/20 text-primary border border-primary/30'
                                         : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
@@ -128,17 +276,16 @@ export default function TransactionList({
                             </button>
                         ))}
                     </div>
-                    
 
                     <div className="flex gap-2 p-1 rounded-xl bg-slate-900/50 border border-slate-800">
                         {[
-                            { value: 'all', label: '📄 Todas' },
-                            { value: 'paid', label: '✅ Pagas' },
-                            { value: 'pending', label: '⏳ A Pagar' }
+                            { value: 'all', label: `📄 Todas (${filteredTransactions.length})` },
+                            { value: 'pending', label: `⏳ A Pagar (${pendingList.length})` },
+                            { value: 'paid', label: `✅ Pagas (${paidList.length})` }
                         ].map((s) => (
                             <button
                                 key={s.value}
-                                onClick={() => onStatusFilterChange && onStatusFilterChange(s.value)}
+                                onClick={() => { onStatusFilterChange && onStatusFilterChange(s.value); setShowAllPending(false); setShowAllPaid(false); }}
                                 className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
                                     statusFilter === s.value 
                                     ? 'bg-slate-800 text-white shadow-lg border border-slate-700' 
@@ -159,7 +306,7 @@ export default function TransactionList({
                         ].map((sf) => (
                             <button
                                 key={sf.value}
-                                onClick={() => { setSpenderFilter(sf.value); setShowAll(false); }}
+                                onClick={() => { setSpenderFilter(sf.value); setShowAllPending(false); setShowAllPaid(false); }}
                                 className={`flex-1 py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
                                     spenderFilter === sf.value
                                     ? 'bg-indigo-600 text-white shadow-md'
@@ -173,110 +320,13 @@ export default function TransactionList({
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                    {displayedTransactions.length === 0 ? (
+                <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+                    {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingList.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300')}
+                    {showPaid && renderSection('Pagas', '✅', displayedPaid, paidTotal, paidList.length, showAllPaid, setShowAllPaid, 'text-emerald-400', 'text-emerald-300')}
+                    {pendingList.length === 0 && paidList.length === 0 && (
                         <p className="text-center text-muted-foreground text-sm py-8">Nenhuma transação encontrada.</p>
-                    ) : (
-                        displayedTransactions.map((t, i) => {
-                            const config = typeConfig[t.type] || typeConfig.expense;
-                            const Icon = config.icon;
-                            const isPaid = t.pago;
-                            const quemDisplay = (t.quem === 'Esposa' || t.quem === 'Kelly') ? 'Kelly' : t.quem;
-                            
-                            return (
-                                <div
-                                    key={t.id}
-                                    className={`group flex items-center justify-between rounded-lg p-3 transition-all duration-200 ${
-                                        isPaid ? 'bg-secondary/10 opacity-80' : 'hover:bg-secondary/30'
-                                    }`}
-                                >
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <button 
-                                            onClick={() => onTogglePaid && onTogglePaid(t.id, !isPaid)}
-                                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all cursor-pointer hover:scale-110 ${
-                                                isPaid ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-amber-500/10 hover:bg-amber-500/30'
-                                            }`}
-                                            title={isPaid ? "Marcar como pendente" : "Marcar como PAGO ✓"}
-                                        >
-                                            {isPaid ? (
-                                                <CheckCircle2 className="h-6 w-6 text-emerald-500" />
-                                            ) : (
-                                                <Clock className="h-6 w-6 text-amber-500" />
-                                            )}
-                                        </button>
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <p className={`text-sm font-medium leading-tight truncate ${isPaid ? 'text-slate-400 line-through decoration-slate-500/50' : ''}`}>
-                                                    {t.description}
-                                                </p>
-                                                {getSpenderBadge(t.quem)}
-                                            </div>
-                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                                <span className="text-xs text-muted-foreground">{t.category}</span>
-                                                <span className="text-muted-foreground/40">•</span>
-                                                <span className="text-xs text-muted-foreground">{formatDate(t.date)}</span>
-                                                {t.fixa && (
-                                                    <>
-                                                        <span className="text-muted-foreground/40">•</span>
-                                                        <span className="flex items-center gap-0.5 text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1 rounded">
-                                                            <Lock className="h-2.5 w-2.5" /> FIXA
-                                                        </span>
-                                                    </>
-                                                )}
-                                                {t.subcategoria && (
-                                                    <>
-                                                        <span className="text-muted-foreground/40">•</span>
-                                                        <span className="text-xs text-indigo-300/70 italic">{t.subcategoria}</span>
-                                                    </>
-                                                )}
-                                                {t.destino && (
-                                                    <>
-                                                        <span className="text-muted-foreground/40">•</span>
-                                                        <span className="text-xs text-slate-500">📍 {t.destino}</span>
-                                                    </>
-                                                )}
-                                                {t.card_name && (
-                                                    <>
-                                                        <span className="text-muted-foreground/40">•</span>
-                                                        <span className="text-xs text-purple-400/70">{t.card_name}</span>
-                                                    </>
-                                                )}
-                                                {t.installment_info && (
-                                                    <span className="text-xs text-purple-300/50 ml-0.5">({t.installment_info})</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0 ml-2">
-                                        <span className={`text-sm font-semibold ${isPaid ? 'text-slate-400' : config.color}`}>
-                                            {config.sign}{formatCurrency(t.amount)}
-                                        </span>
-                                        {onDelete && (
-                                            <button
-                                                onClick={() => onDelete(t.id)}
-                                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/20 cursor-pointer"
-                                                title="Excluir"
-                                            >
-                                                <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })
                     )}
                 </div>
-
-                {/* Show More */}
-                {filteredTransactions.length > 15 && !showAll && (
-                    <button
-                        onClick={() => setShowAll(true)}
-                        className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-all cursor-pointer"
-                    >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                        Ver mais ({filteredTransactions.length - 15} restantes)
-                    </button>
-                )}
             </CardContent>
         </Card>
     );
