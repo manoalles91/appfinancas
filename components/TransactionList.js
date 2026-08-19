@@ -43,15 +43,18 @@ export default function TransactionList({
             list = list.filter(t => t && t.quem && t.quem.startsWith('Comum'));
         }
 
-        return list;
-    }, [transactions, filter, spenderFilter, selectedCardFilter]);
+        if (viewDate) {
+            list = list.filter(t => {
+                if (!t || !t.date) return false;
+                const d = new Date(t.date);
+                return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
+            });
+        }
 
-    const pendingList = useMemo(() => filteredTransactions.filter(t => {
-        if (t.pago) return false;
-        if (!t.date || !viewDate) return false;
-        const d = new Date(t.date);
-        return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
-    }), [filteredTransactions, viewDate]);
+        return list;
+    }, [transactions, filter, spenderFilter, selectedCardFilter, viewDate]);
+
+    const pendingList = useMemo(() => filteredTransactions.filter(t => !t.pago), [filteredTransactions]);
     const paidList = useMemo(() => filteredTransactions.filter(t => t.pago), [filteredTransactions]);
 
     const sum = (list) => list.reduce((acc, t) => acc + (t.amount || 0), 0);
