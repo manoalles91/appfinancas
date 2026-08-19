@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useMemo, useState } from 'react';
 import { CalendarClock, AlertCircle, CalendarDays } from 'lucide-react';
 import Balances from '@/components/Balances';
+import Financiamentos from '@/components/Financiamentos';
 
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -19,7 +20,7 @@ const formatDate = (dateString) => {
     });
 };
 
-export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly' }) {
+export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly', onAddMany, onDeleteByNome }) {
     const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
     const allTxs = useMemo(() => (Array.isArray(allTransactions) ? allTransactions : []), [allTransactions]);
 
@@ -57,11 +58,14 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
     }, [txs]);
 
     const financeSummary = useMemo(() => {
+        const now = new Date();
         let pendingIncome = 0;
         let pendingExpense = 0;
 
         allTxs.forEach((t) => {
-            if (!t) return;
+            if (!t || !t.date) return;
+            const d = new Date(t.date);
+            if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return;
             const amt = Number(t.amount || 0);
             if (t.type === 'income') {
                 if (!t.pago) pendingIncome += amt;
@@ -206,6 +210,12 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
                     </span>
                 </div>
             </div>
+
+            <Financiamentos
+                transactions={allTxs}
+                onAddMany={onAddMany}
+                onDeleteByNome={onDeleteByNome}
+            />
 
             {/* Despesas com Vencimento */}
             {(dueExpenses.totalVencidas > 0 || dueExpenses.totalProximas > 0) && (

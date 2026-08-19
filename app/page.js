@@ -271,6 +271,38 @@ export default function Home() {
     }
   }, [toast]);
 
+  const handleAdjustAmount = useCallback(async (id, amount) => {
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update({ amount })
+        .eq('id', id);
+      if (error) throw error;
+      setTransactions(prev => prev.map(t => t.id === id ? { ...t, amount } : t));
+      toast('Valor ajustado para ' + amount.toFixed(2).replace('.', ','));
+    } catch (error) {
+      console.error('Error adjusting amount:', error.message);
+      toast('Erro ao ajustar valor: ' + error.message, 'error');
+    }
+  }, [toast]);
+
+  const handleDeleteByNome = useCallback(async (nome) => {
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('description', nome)
+        .ilike('installment_info', '%/%');
+      if (error) throw error;
+      await fetchData();
+      return true;
+    } catch (error) {
+      console.error('Error deleting financing parcels:', error.message);
+      toast('Erro ao remover parcelas: ' + error.message, 'error');
+      return false;
+    }
+  }, [fetchData, toast]);
+
   const handleAddCard = async (e) => {
     e.preventDefault();
     if (!newCardData.nome.trim()) {
@@ -438,6 +470,8 @@ export default function Home() {
               allTransactions={transactions}
               partner1={partner1}
               partner2={partner2}
+              onAddMany={handleBulkAdd}
+              onDeleteByNome={handleDeleteByNome}
             />
           </div>
         )}
@@ -476,6 +510,7 @@ export default function Home() {
                 transactions={monthTransactions}
                 onDelete={setTxToDelete}
                 onTogglePaid={handleTogglePaid}
+                onAdjustAmount={handleAdjustAmount}
                 statusFilter={transactionStatusFilter}
                 onStatusFilterChange={setTransactionStatusFilter}
                 partner1={partner1}

@@ -2,12 +2,14 @@
 
 import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCircle2, Clock, Lock } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCircle2, Clock, Lock, Pencil, X, Check } from 'lucide-react';
 
 export default function TransactionList({ 
     transactions, 
     onDelete, 
     onTogglePaid, 
+    onAdjustAmount, 
     statusFilter = 'all', 
     onStatusFilterChange, 
     partner1 = 'Alle', 
@@ -20,6 +22,8 @@ export default function TransactionList({
     const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum
     const [showAllPending, setShowAllPending] = useState(false);
     const [showAllPaid, setShowAllPaid] = useState(false);
+    const [adjustFor, setAdjustFor] = useState(null);
+    const [adjustValue, setAdjustValue] = useState('');
 
     const filteredTransactions = useMemo(() => {
         const txs = Array.isArray(transactions) ? transactions : [];
@@ -139,11 +143,18 @@ export default function TransactionList({
             >
                 <div className="flex items-center gap-3 min-w-0">
                     <button 
-                        onClick={() => onTogglePaid && onTogglePaid(t.id, !isPaid)}
+                        onClick={() => {
+                            if (!isPaid && t.installment_info && onAdjustAmount) {
+                                setAdjustFor(t);
+                                setAdjustValue(String(Number(t.amount || 0).toFixed(2)).replace('.', ','));
+                            } else {
+                                onTogglePaid && onTogglePaid(t.id, !isPaid);
+                            }
+                        }}
                         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all cursor-pointer hover:scale-110 ${
                             isPaid ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-amber-500/10 hover:bg-amber-500/30'
                         }`}
-                        title={isPaid ? "Marcar como pendente" : "Marcar como PAGO ✓"}
+                        title={isPaid ? "Marcar como pendente" : (t.installment_info ? "Pagar (ajusta o valor real do boleto)" : "Marcar como PAGO ✓")}
                     >
                         {isPaid ? (
                             <CheckCircle2 className="h-6 w-6 text-emerald-500" />
@@ -359,6 +370,50 @@ export default function TransactionList({
                 </div>
             </CardHeader>
             <CardContent>
+                {adjustFor && (
+                    <div className="mb-4 rounded-2xl border border-amber-500/40 bg-amber-950/20 p-4 space-y-3 animate-fade-in">
+                        <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                                <p className="text-sm font-bold text-white truncate">{adjustFor.description}</p>
+                                <p className="text-[10px] text-amber-300/70">
+                                    Parcela ({adjustFor.installment_info}) • pode haver diferença de centavos por TR/seguros
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setAdjustFor(null)}
+                                className="text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <div className="flex items-end gap-2">
+                            <div className="flex-1 space-y-1.5">
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Valor real do boleto (R$)</label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={adjustValue}
+                                    onChange={(e) => setAdjustValue(e.target.value)}
+                                    className="bg-slate-900/60 border-amber-500/40"
+                                />
+                            </div>
+                            <button
+                                onClick={async () => {
+                                    const v = parseFloat(String(adjustValue).replace(',', '.')) || 0;
+                                    if (v > 0) {
+                                        await onAdjustAmount(adjustFor.id, Math.round(v * 100) / 100);
+                                    }
+                                    await onTogglePaid(adjustFor.id, true);
+                                    setAdjustFor(null);
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 text-slate-950 px-4 py-2.5 text-xs font-black hover:bg-amber-400 transition-all cursor-pointer"
+                            >
+                                <Check className="h-3.5 w-3.5" /> Pagar
+                            </button>
+                        </div>
+                    </div>
+                )}
                 <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
                     {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingList.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300', false)}
                     {showPaid && renderSection('Pagas', '✅', displayedPaid, paidTotal, paidList.length, showAllPaid, setShowAllPaid, 'text-emerald-400', 'text-emerald-300', false)}
