@@ -329,15 +329,24 @@ export default function Home() {
       toast('Informe um valor válido.', 'error');
       return;
     }
-    const parcN = parseInt(editingTransaction.parcelaN, 10) || 0;
+    const isParcela = !!editingTransaction.isParcela;
+    const parcN = Math.max(1, parseInt(editingTransaction.parcelaN, 10) || 1);
     const parcTotal = parseInt(editingTransaction.parcelaTotal, 10) || 0;
-    const installment_info = editingTransaction.isParcela && parcN > 0 && parcTotal >= parcN
-      ? `${parcN}/${parcTotal}`
-      : null;
+    const validParcela = isParcela && parcTotal >= parcN && parcTotal > 0;
+    const installment_info = validParcela ? `${parcN}/${parcTotal}` : null;
+
+    let siblings = [];
+    if (validParcela && parcTotal > 1) {
+      const re = new RegExp(`^(\\d+)/${parcTotal}$`);
+      siblings = transactions.filter(t => t.id !== editingTransaction.id && t.description === editingTransaction.description && re.test(String(t.installment_info || '')));
+    }
+    const needsSplit = validParcela && parcTotal > 1 && siblings.length === 0;
+    const base = needsSplit ? Math.round((amount / parcTotal) * 100) / 100 : amount;
+
     try {
       const payload = {
         description: editingTransaction.description,
-        amount,
+        amount: base,
         type: editingTransaction.type,
         date: editingTransaction.date,
         category: editingTransaction.category,
@@ -350,19 +359,53 @@ export default function Home() {
         card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
         installment_info,
       };
+
+      let created = [];
+      if (needsSplit) {
+        const lastAmount = Math.round((amount - base * (parcTotal - 1)) * 100) / 100;
+        const baseDate = new Date((editingTransaction.date || new Date().toISOString().slice(0, 10)) + 'T12:00:00');
+        const inserts = [];
+        for (let i = 1; i <= parcTotal; i++) {
+          if (i === parcN) continue;
+          const d = new Date(baseDate);
+          d.setMonth(d.getMonth() + (i - parcN));
+          inserts.push({
+            description: editingTransaction.description,
+            amount: i === parcTotal ? lastAmount : base,
+            type: editingTransaction.type,
+            category: editingTransaction.category,
+            subcategoria: editingTransaction.subcategoria || '',
+            date: d.toISOString(),
+            fixa: !!editingTransaction.fixa,
+            pago: false,
+            payment_method: editingTransaction.payment_method || 'checking',
+            quem: editingTransaction.quem || 'Comum',
+            destino: editingTransaction.destino || '',
+            installment_info: `${i}/${parcTotal}`,
+            card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
+          });
+        }
+        const { data: ins, error: insErr } = await supabase.from('transactions').insert(inserts).select();
+        if (insErr) throw insErr;
+        created = ins || [];
+      }
+
       const { error } = await supabase
         .from('transactions')
         .update(payload)
         .eq('id', editingTransaction.id);
       if (error) throw error;
-      setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? { ...t, ...payload } : t));
+      setTransactions(prev => {
+        const rest = prev.map(t => t.id === editingTransaction.id ? { ...t, ...payload } : t);
+        return needsSplit ? [...rest, ...created] : rest;
+      });
       setEditingTransaction(null);
-      toast('Transação atualizada!');
+      toast(needsSplit ? `Transação dividida em ${parcTotal} parcelas mensais!` : 'Transação atualizada!');
     } catch (error) {
       console.error('Error updating transaction:', error.message);
       toast('Erro ao atualizar: ' + error.message, 'error');
     }
-  }, [editingTransaction, toast]);
+  }, [editingTransaction, transactions, toast]);
 
   const handleAddCard = async (e) => {
     e.preventDefault();
@@ -1165,27 +1208,32 @@ export default function Home() {
                     É parcelado (aparece {'"n/total"'} na lista)
                   </label>
                   {editingTransaction.isParcela && (
-                    <div className="grid grid-cols-2 gap-4 animate-fade-in">
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Parcela nº</label>
-                        <input
-                          type="number"
-                          min="1"
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
-                          value={editingTransaction.parcelaN}
-                          onChange={(e) => setEditingTransaction({ ...editingTransaction, parcelaN: e.target.value })}
-                        />
+                    <div className="space-y-2 animate-fade-in">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Parcela nº</label>
+                          <input
+                            type="number"
+                            min="1"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                            value={editingTransaction.parcelaN}
+                            onChange={(e) => setEditingTransaction({ ...editingTransaction, parcelaN: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total de parcelas</label>
+                          <input
+                            type="number"
+                            min="1"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                            value={editingTransaction.parcelaTotal}
+                            onChange={(e) => setEditingTransaction({ ...editingTransaction, parcelaTotal: e.target.value })}
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total de parcelas</label>
-                        <input
-                          type="number"
-                          min="1"
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
-                          value={editingTransaction.parcelaTotal}
-                          onChange={(e) => setEditingTransaction({ ...editingTransaction, parcelaTotal: e.target.value })}
-                        />
-                      </div>
+                      <p className="text-[11px] text-indigo-300/70">
+                        Ao salvar, o valor é dividido em {editingTransaction.parcelaTotal || 'N'} parcelas mensais (a última recebe a diferença de centavos).
+                      </p>
                     </div>
                   )}
                 </div>
