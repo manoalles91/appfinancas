@@ -303,22 +303,19 @@ export default function Home() {
     }
   }, [toast]);
 
-  const handleDeleteByNome = useCallback(async (nome) => {
+  const handleDeleteByIds = useCallback(async (ids) => {
+    if (!ids || ids.length === 0) return true;
     try {
-      const { error } = await supabase
-        .from('transactions')
-        .delete()
-        .eq('description', nome)
-        .ilike('installment_info', '%/%');
+      const { error } = await supabase.from('transactions').delete().in('id', ids);
       if (error) throw error;
-      await fetchData();
+      setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
       return true;
     } catch (error) {
       console.error('Error deleting financing parcels:', error.message);
       toast('Erro ao remover parcelas: ' + error.message, 'error');
       return false;
     }
-  }, [fetchData, toast]);
+  }, [toast]);
 
   const handleUpdateTransaction = useCallback(async (e) => {
     e.preventDefault();
@@ -526,7 +523,7 @@ export default function Home() {
               partner1={partner1}
               partner2={partner2}
               onAddMany={handleBulkAdd}
-              onDeleteByNome={handleDeleteByNome}
+              onDeleteByIds={handleDeleteByIds}
             />
           </div>
         )}

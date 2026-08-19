@@ -20,7 +20,7 @@ const formatDate = (dateString) => {
     });
 };
 
-export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly', onAddMany, onDeleteByNome }) {
+export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly', onAddMany, onDeleteByIds }) {
     const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
     const allTxs = useMemo(() => (Array.isArray(allTransactions) ? allTransactions : []), [allTransactions]);
 
@@ -214,7 +214,7 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
             <Financiamentos
                 transactions={allTxs}
                 onAddMany={onAddMany}
-                onDeleteByNome={onDeleteByNome}
+                onDeleteByIds={onDeleteByIds}
             />
 
             {/* Despesas com Vencimento */}

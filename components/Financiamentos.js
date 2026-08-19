@@ -45,7 +45,7 @@ const emptyForm = {
     pagoAtual: true,
 };
 
-export default function Financiamentos({ transactions = [], onAddMany, onDeleteByNome }) {
+export default function Financiamentos({ transactions = [], onAddMany, onDeleteByIds }) {
     const { toast } = useToast();
     const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
 
@@ -127,7 +127,7 @@ export default function Financiamentos({ transactions = [], onAddMany, onDeleteB
 
     const statsFor = (f) => {
         const rows = txs.filter(
-            (t) => t && t.description === f.nome && t.installment_info && String(t.installment_info).includes('/')
+            (t) => t && t.description && (t.description === f.nome || t.description.startsWith(f.nome + ' ('))
         );
         const paid = rows.filter((t) => t.pago).length;
         const lastPaid = paid > 0 ? f.parcelaAtual + paid - 1 : f.parcelaAtual - 1;
@@ -170,17 +170,29 @@ export default function Financiamentos({ transactions = [], onAddMany, onDeleteB
         }
     };
 
-    const handleGenerateClick = (f) => {
+    const handleGenerateClick = async (f) => {
+        if (busy) return;
         const st = statsFor(f);
         if (st.rows.length > 0) {
-            if (armedRegen === f.nome) {
-                if (!onDeleteByNome) return;
-                onDeleteByNome(f.nome).then(() => generate(f));
-            } else {
+            if (armedRegen !== f.nome) {
                 setArmedRegen(f.nome);
+                return;
+            }
+            if (!onDeleteByIds) return;
+            setBusy(true);
+            try {
+                const ids = st.rows.map((t) => t.id);
+                const ok = await onDeleteByIds(ids);
+                if (ok) {
+                    await generate(f);
+                } else {
+                    setBusy(false);
+                }
+            } catch {
+                setBusy(false);
             }
         } else {
-            generate(f);
+            await generate(f);
         }
     };
 
@@ -409,13 +421,13 @@ export default function Financiamentos({ transactions = [], onAddMany, onDeleteB
                                 >
                                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (armedRegen === f.nome ? <RefreshCw className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />)}
                                     {st.rows.length > 0
-                                        ? (armedRegen === f.nome ? 'CONFIRMAR (apaga e recria)' : 'REGENERAR PARCELAS')
+                                        ? (armedRegen === f.nome ? `CONFIRMAR (substitui as ${st.rows.length} existentes)` : 'ATUALIZAR PARCELAS')
                                         : `GERAR PARCELAS (${f.total - f.parcelaAtual + 1} restantes)`}
                                 </button>
                             </div>
                             {st.rows.length > 0 && (
                                 <p className="text-[10px] text-slate-500">
-                                    {st.rows.length} parcelas já lançadas • {st.paid} pagas • progresso calculado automaticamente ao marcar como pago.
+                                    {st.rows.length} parcelas já lançadas • {st.paid} pagas • progresso calculado automaticamente ao marcar como pago. Para mudar só uma parcela, use o lápis ✏️ na lista de transações.
                                 </p>
                             )}
                         </div>
