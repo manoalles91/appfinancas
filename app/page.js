@@ -346,11 +346,43 @@ export default function Home() {
         .eq('id', id);
       if (error) throw error;
       setTransactions(prev => prev.map(t => t.id === id ? { ...t, pago: newStatus } : t));
+
+      if (newStatus) {
+        const t = transactions.find(x => x.id === id);
+        if (t && t.fixa && !t.installment_info) {
+          const d = new Date((t.date || '').slice(0, 10) + 'T12:00:00');
+          const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
+          const nextDate = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), lastDay));
+          const nextKey = nextDate.toISOString().slice(0, 7);
+          const exists = transactions.some(x => x.fixa && !x.installment_info && x.description === t.description && x.date && x.date.slice(0, 7) === nextKey);
+          if (!exists) {
+            const { data, error: insErr } = await supabase
+              .from('transactions')
+              .insert([{
+                description: t.description,
+                amount: t.amount,
+                type: t.type,
+                category: t.category,
+                date: nextDate.toISOString(),
+                fixa: true,
+                pago: false,
+                payment_method: t.payment_method || 'checking',
+                quem: t.quem || 'Comum',
+                subcategoria: t.subcategoria || '',
+                destino: t.destino || '',
+                card_name: t.type === 'credit' ? t.card_name || null : null,
+              }])
+              .select();
+            if (insErr) throw insErr;
+            if (data && data[0]) setTransactions(prev => [data[0], ...prev]);
+          }
+        }
+      }
     } catch (error) {
       console.error('Error updating transaction status:', error.message);
       toast('Erro ao atualizar transação: ' + error.message, 'error');
     }
-  }, [toast]);
+  }, [transactions, toast]);
 
   const handleAdjustAmount = useCallback(async (id, amount) => {
     try {

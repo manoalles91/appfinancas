@@ -24,10 +24,6 @@ const initialForm = () => ({
     cardName: '',
     pago: false,
     fixa: false,
-    repeats: 12,
-    variacaoTipo: 'none',
-    variacaoValor: 0,
-    variacaoUnidade: 'percent',
     payment_method: 'checking',
     quem: 'Comum',
     subcategoria: '',
@@ -107,45 +103,20 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                 }
                 toast(`Compra parcelada em ${formData.installments}x registrada!`);
             } else if (formData.fixa) {
-                const baseDate = new Date(formData.date);
-                const total = Math.max(1, Math.min(600, parseInt(formData.repeats, 10) || 12));
-                const variacaoTipo = formData.variacaoTipo || 'none';
-                const variacaoValor = Math.max(0, parseFloat(String(formData.variacaoValor).replace(',', '.')) || 0);
-                const unidade = formData.variacaoUnidade === 'reais' ? 'reais' : 'percent';
-                const payloads = [];
-                let currentAmount = baseAmount;
-
-                for (let i = 0; i < total; i++) {
-                    const recurrenceDate = new Date(baseDate);
-                    recurrenceDate.setMonth(recurrenceDate.getMonth() + i);
-
-                    payloads.push({
-                        description: formData.description,
-                        amount: Math.round(currentAmount * 100) / 100,
-                        type: formData.type,
-                        category: formData.category || 'Fixa',
-                        date: recurrenceDate.toISOString(),
-                        fixa: true,
-                        pago: i === 0 ? formData.pago : false,
-                        payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
-                        quem: finalQuem,
-                        subcategoria: formData.subcategoria,
-                        destino: formData.destino,
-                    });
-
-                    if (variacaoTipo === 'aumento') {
-                        currentAmount = unidade === 'reais' ? currentAmount + variacaoValor : currentAmount * (1 + variacaoValor / 100);
-                    } else if (variacaoTipo === 'reducao') {
-                        currentAmount = Math.max(0, unidade === 'reais' ? currentAmount - variacaoValor : currentAmount * (1 - variacaoValor / 100));
-                    }
-                }
-
-                if (onAddMany) {
-                    await onAddMany(payloads, total > 1 ? `${total} parcelas registradas!` : 'Despesa fixa criada!');
-                } else {
-                    for (const p of payloads) await onAdd(p);
-                    toast(total > 1 ? `${total} parcelas registradas!` : 'Despesa fixa criada!');
-                }
+                await onAdd({
+                    description: formData.description,
+                    amount: baseAmount,
+                    type: formData.type,
+                    category: formData.category || 'Fixa',
+                    date: new Date(formData.date).toISOString(),
+                    fixa: true,
+                    pago: formData.pago,
+                    payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
+                    quem: finalQuem,
+                    subcategoria: formData.subcategoria,
+                    destino: formData.destino,
+                });
+                toast('Despesa fixa criada! Ao pagar, a do próximo mês é gerada automaticamente.');
             } else {
                 await onAdd({
                     description: formData.description,
@@ -391,61 +362,9 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                             </div>
 
                             {formData.fixa && (
-                                <div className="space-y-3 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 animate-fade-in">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="space-y-1.5">
-                                            <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Repetições (meses)</label>
-                                            <Input
-                                                type="number"
-                                                min="1"
-                                                max="600"
-                                                value={formData.repeats}
-                                                onChange={(e) => setFormData({ ...formData, repeats: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Variação mensal</label>
-                                            <select
-                                                value={formData.variacaoTipo}
-                                                onChange={(e) => setFormData({ ...formData, variacaoTipo: e.target.value })}
-                                                className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
-                                            >
-                                                <option value="none">Nenhuma (valor fixo)</option>
-                                                <option value="reducao">Redução</option>
-                                                <option value="aumento">Aumento</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    {formData.variacaoTipo !== 'none' && (
-                                        <div className="grid grid-cols-2 gap-3 animate-fade-in">
-                                            <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Valor da variação</label>
-                                                <Input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    placeholder={formData.variacaoUnidade === 'reais' ? 'Ex: 4,31' : 'Ex: 0,5'}
-                                                    value={formData.variacaoValor}
-                                                    onChange={(e) => setFormData({ ...formData, variacaoValor: e.target.value })}
-                                                />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Unidade</label>
-                                                <select
-                                                    value={formData.variacaoUnidade}
-                                                    onChange={(e) => setFormData({ ...formData, variacaoUnidade: e.target.value })}
-                                                    className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
-                                                >
-                                                    <option value="percent">% (porcentagem)</option>
-                                                    <option value="reais">R$ (reais)</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <p className="text-[11px] text-blue-300/60">
-                                        Cada mês = valor anterior {formData.variacaoTipo === 'aumento' ? '+ variação' : formData.variacaoTipo === 'reducao' ? '− variação' : '(valor fixo)'}. Ex.: parcela da casa caindo R$ 4,31/mês.
+                                <div className="space-y-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 animate-fade-in">
+                                    <p className="text-[11px] text-blue-300/80">
+                                        Despesa fixa = mesmo valor todo mês. Ao pagar a do mês atual, a do próximo mês é gerada automaticamente.
                                     </p>
                                 </div>
                             )}
