@@ -65,7 +65,7 @@ export default function Home() {
     setEditGrupo(gid || 'outra');
     setEditingTransaction({
       ...t,
-      amount: String(Number(t.amount || 0).toFixed(2)).replace('.', ','),
+      amount: String(Number(t.amount || 0).toFixed(2)),
       date: (t.date || '').slice(0, 10),
       subcategoria: t.subcategoria || '',
       destino: t.destino || '',

@@ -120,7 +120,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                     recurrenceDate.setMonth(recurrenceDate.getMonth() + i);
 
                     payloads.push({
-                        description: total > 1 ? `${formData.description} (${i + 1}/${total})` : formData.description,
+                        description: formData.description,
                         amount: Math.round(currentAmount * 100) / 100,
                         type: formData.type,
                         category: formData.category || 'Fixa',
