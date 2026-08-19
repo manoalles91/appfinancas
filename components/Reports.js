@@ -3,6 +3,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useMemo } from 'react';
+import { CATEGORY_GROUPS, getGroupId } from '@/lib/categories';
+
+const GROUP_COLORS = {
+    essenciais: '#60a5fa',
+    estilo_vida: '#f472b6',
+    investimentos: '#34d399',
+    renda: '#fbbf24',
+};
+
+const GROUP_EMOJI = {
+    essenciais: '🏠',
+    estilo_vida: '🎮',
+    investimentos: '📈',
+    renda: '💵',
+};
 
 const PIE_COLORS = [
     '#818cf8', '#f472b6', '#fb923c', '#34d399',
@@ -77,6 +92,27 @@ export default function Reports({ transactions = [] }) {
             .sort((a, b) => b.value - a.value);
     }, [txs]);
 
+    const groupData = useMemo(() => {
+        const totals = {};
+        let total = 0;
+        txs
+            .filter(t => t && (t.type === 'expense' || t.type === 'credit'))
+            .forEach(t => {
+                const amt = Number(t.amount || 0);
+                total += amt;
+                const groupId = getGroupId(t.category) || 'outros';
+                totals[groupId] = (totals[groupId] || 0) + amt;
+            });
+        return {
+            totals,
+            total,
+            groups: CATEGORY_GROUPS
+                .filter(g => totals[g.id])
+                .map(g => ({ ...g, value: totals[g.id], percent: total > 0 ? (totals[g.id] / total) * 100 : 0 }))
+                .sort((a, b) => b.value - a.value),
+        };
+    }, [txs]);
+
     const projectionData = useMemo(() => {
         const now = new Date();
         const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -105,6 +141,35 @@ export default function Reports({ transactions = [] }) {
 
     return (
         <div className="space-y-6">
+            {groupData.groups.length > 0 && (
+                <Card className="animate-slide-up border-indigo-500/20 bg-indigo-950/10">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Despesas por Grupo</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {groupData.groups.map((g) => (
+                                <div key={g.id} className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/50 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs font-black uppercase tracking-wider" style={{ color: GROUP_COLORS[g.id] || '#94a3b8' }}>
+                                            {GROUP_EMOJI[g.id] || ''} {g.label}
+                                        </p>
+                                        <p className="text-xs font-extrabold text-slate-200">{Math.round(g.percent)}%</p>
+                                    </div>
+                                    <p className="text-xl font-black text-white">{formatCurrency(g.value)}</p>
+                                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full transition-all duration-1000"
+                                            style={{ width: `${Math.min(g.percent, 100)}%`, backgroundColor: GROUP_COLORS[g.id] || '#94a3b8' }}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             <div className="grid gap-6 lg:grid-cols-5">
                 <Card className="lg:col-span-3 animate-slide-up">
                     <CardHeader>

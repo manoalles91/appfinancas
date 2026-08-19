@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, CreditCard, ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronUp } from 'lucide-react';
-import { CATEGORIES } from '@/components/CategoryIcon';
+import { CATEGORY_GROUPS } from '@/lib/categories';
 import { useToast } from '@/components/ui/toast';
 
 const TRANSACTION_TYPES = [
@@ -24,17 +24,42 @@ const initialForm = () => ({
     cardName: '',
     pago: false,
     fixa: false,
+    repeats: 12,
+    monthlyDrop: 0,
     payment_method: 'checking',
     quem: 'Comum',
     subcategoria: '',
     destino: '',
 });
 
-export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Alle', partner2 = 'Kelly' }) {
+export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], partner1 = 'Alle', partner2 = 'Kelly' }) {
     const [quemPagou, setQuemPagou] = useState('Dividido');
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [selectedGroup, setSelectedGroup] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('');
     const [formData, setFormData] = useState(initialForm());
     const { toast } = useToast();
+
+    const groupOptions = CATEGORY_GROUPS;
+    const categoryOptions = selectedGroup
+        ? (groupOptions.find((g) => g.id === selectedGroup)?.categories || [])
+        : [];
+    const selectedCatInfo = categoryOptions.find((c) => c.name === selectedCategory);
+
+    const selectGroup = (groupId) => {
+        setSelectedGroup(groupId);
+        setSelectedCategory('');
+        setFormData({ ...formData, category: '', subcategoria: '' });
+    };
+
+    const selectCategory = (catName) => {
+        setSelectedCategory(catName);
+        setFormData({ ...formData, category: catName, subcategoria: '' });
+    };
+
+    const selectItem = (item) => {
+        setFormData({ ...formData, subcategoria: item });
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -82,13 +107,18 @@ export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Al
                 toast(`Compra parcelada em ${formData.installments}x registrada!`);
             } else if (formData.fixa) {
                 const baseDate = new Date(formData.date);
-                for (let i = 0; i < 12; i++) {
+                const total = Math.max(1, Math.min(600, parseInt(formData.repeats, 10) || 12));
+                const drop = Math.max(0, parseFloat(String(formData.monthlyDrop).replace(',', '.')) || 0);
+                const payloads = [];
+                let currentAmount = baseAmount;
+
+                for (let i = 0; i < total; i++) {
                     const recurrenceDate = new Date(baseDate);
                     recurrenceDate.setMonth(recurrenceDate.getMonth() + i);
 
-                    await onAdd({
-                        description: formData.description,
-                        amount: baseAmount,
+                    payloads.push({
+                        description: total > 1 ? `${formData.description} (${i + 1}/${total})` : formData.description,
+                        amount: Math.round(currentAmount * 100) / 100,
                         type: formData.type,
                         category: formData.category || 'Fixa',
                         date: recurrenceDate.toISOString(),
@@ -99,8 +129,15 @@ export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Al
                         subcategoria: formData.subcategoria,
                         destino: formData.destino,
                     });
+                    currentAmount = currentAmount * (1 - drop / 100);
                 }
-                toast('Despesa fixa criada para os próximos 12 meses!');
+
+                if (onAddMany) {
+                    await onAddMany(payloads, total > 1 ? `${total} parcelas registradas!` : 'Despesa fixa criada!');
+                } else {
+                    for (const p of payloads) await onAdd(p);
+                    toast(total > 1 ? `${total} parcelas registradas!` : 'Despesa fixa criada!');
+                }
             } else {
                 await onAdd({
                     description: formData.description,
@@ -122,6 +159,8 @@ export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Al
             setQuemPagou('Dividido');
             setFormData(initialForm());
             setShowAdvanced(false);
+            setSelectedGroup('');
+            setSelectedCategory('');
         } catch (error) {
             toast('Erro ao registrar: ' + error.message, 'error');
         }
@@ -200,19 +239,50 @@ export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Al
 
                     {/* Category */}
                     <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Categoria</label>
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Grupo</label>
                         <select
-                            value={formData.category}
-                            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                            value={selectedGroup}
+                            onChange={(e) => selectGroup(e.target.value)}
                             className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
                         >
                             <option value="">Selecionar...</option>
-                            <option value="Contas Fixas">Contas Fixas (Luz, Água...)</option>
-                            {CATEGORIES.map((cat) => (
-                                <option key={cat} value={cat}>{cat}</option>
+                            {groupOptions.map((g) => (
+                                <option key={g.id} value={g.id}>{g.emoji} {g.label}</option>
                             ))}
                         </select>
                     </div>
+
+                    {selectedGroup && (
+                        <div className="grid grid-cols-2 gap-3 animate-fade-in">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Categoria</label>
+                                <select
+                                    value={selectedCategory}
+                                    onChange={(e) => selectCategory(e.target.value)}
+                                    className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
+                                >
+                                    <option value="">Selecionar...</option>
+                                    {categoryOptions.map((c) => (
+                                        <option key={c.name} value={c.name}>{c.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item (opcional)</label>
+                                <select
+                                    value={formData.subcategoria}
+                                    onChange={(e) => selectItem(e.target.value)}
+                                    disabled={!selectedCategory}
+                                    className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <option value="">Sem item</option>
+                                    {(selectedCatInfo?.items || []).map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Advanced options toggle */}
                     <button
@@ -297,7 +367,7 @@ export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Al
                                     </button>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Despesa Fixa?</label>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Fixa / Parcelas?</label>
                                     <button
                                         type="button"
                                         onClick={() => setFormData({ ...formData, fixa: !formData.fixa })}
@@ -307,10 +377,41 @@ export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Al
                                             : 'bg-secondary/30 text-slate-500 border-slate-800 hover:text-slate-300'
                                         }`}
                                     >
-                                        {formData.fixa ? 'SIM (12 MESES)' : 'NÃO'}
+                                        {formData.fixa ? 'SIM' : 'NÃO'}
                                     </button>
                                 </div>
                             </div>
+
+                            {formData.fixa && (
+                                <div className="space-y-3 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 animate-fade-in">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Repetições (meses)</label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                max="600"
+                                                value={formData.repeats}
+                                                onChange={(e) => setFormData({ ...formData, repeats: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Redução mensal (%)</label>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                placeholder="0 = valor fixo"
+                                                value={formData.monthlyDrop}
+                                                onChange={(e) => setFormData({ ...formData, monthlyDrop: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-[11px] text-blue-300/60">
+                                        Cada mês = valor anterior × (1 - redução%). Ex.: financiamento de 480x caindo 0,1% ao mês.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* De quem é? (Responsável) */}
                             <div className="space-y-1.5">
@@ -353,24 +454,14 @@ export default function AddTransactionForm({ onAdd, cartoes = [], partner1 = 'Al
                                 </div>
                             )}
 
-                            {/* Subcategory & Destino row */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subcategoria</label>
-                                    <Input
-                                        placeholder="Ex: Jantar, Academia..."
-                                        value={formData.subcategoria}
-                                        onChange={(e) => setFormData({ ...formData, subcategoria: e.target.value })}
-                                    />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Destino/Origem</label>
-                                    <Input
-                                        placeholder="Ex: Casa, Trabalho..."
-                                        value={formData.destino}
-                                        onChange={(e) => setFormData({ ...formData, destino: e.target.value })}
-                                    />
-                                </div>
+                            {/* Destino row */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Destino/Origem</label>
+                                <Input
+                                    placeholder="Ex: Casa, Trabalho..."
+                                    value={formData.destino}
+                                    onChange={(e) => setFormData({ ...formData, destino: e.target.value })}
+                                />
                             </div>
 
                             {/* Credit card specific fields */}

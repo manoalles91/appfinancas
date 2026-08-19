@@ -172,7 +172,7 @@ export default function Home() {
     setTransactions(prev => [data[0], ...prev]);
   }, []);
 
-  const handleImportTransactions = useCallback(async (items) => {
+  const handleBulkAdd = useCallback(async (items, successMessage) => {
     try {
       const CHUNK = 500;
       for (let i = 0; i < items.length; i += CHUNK) {
@@ -180,12 +180,16 @@ export default function Home() {
         if (error) throw error;
       }
       await fetchData();
-      toast(`${items.length} transações importadas com sucesso!`);
+      toast(successMessage || `${items.length} transações adicionadas!`);
     } catch (error) {
-      console.error('Error importing transactions:', error.message);
-      toast('Erro ao importar: ' + error.message, 'error');
+      console.error('Error adding transactions:', error.message);
+      toast('Erro ao adicionar: ' + error.message, 'error');
     }
   }, [fetchData, toast]);
+
+  const handleImportTransactions = useCallback(async (items) => {
+    await handleBulkAdd(items, `${items.length} transações importadas com sucesso!`);
+  }, [handleBulkAdd]);
 
   const confirmDeleteTransaction = useCallback(async () => {
     if (!txToDelete) return;
@@ -462,6 +466,7 @@ export default function Home() {
             <div className="grid gap-8 lg:grid-cols-2">
               <AddTransactionForm
                 onAdd={handleAddTransaction}
+                onAddMany={handleBulkAdd}
                 cartoes={cartoes}
                 partner1={partner1}
                 partner2={partner2}
