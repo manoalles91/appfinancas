@@ -28,6 +28,11 @@ const saveAll = (list) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 };
 
+const currentMonth = () => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+};
+
 const emptyForm = {
     nome: 'Financiamento Casa',
     parcelaAtual: 1,
@@ -36,6 +41,7 @@ const emptyForm = {
     valorFinal: '',
     desconto: 0,
     dia: 10,
+    inicio: currentMonth(),
     pagoAtual: true,
 };
 
@@ -93,6 +99,7 @@ export default function Financiamentos({ transactions = [], onAddMany, onDeleteB
             valorFinal: parseFloat(String(form.valorFinal).replace(',', '.')) || 0,
             desconto: Math.max(0, parseFloat(String(form.desconto).replace(',', '.')) || 0),
             dia: Math.min(28, Math.max(1, parseInt(form.dia, 10) || 10)),
+            inicio: form.inicio || currentMonth(),
             pagoAtual: !!form.pagoAtual,
             quem: 'Comum',
         };
@@ -136,7 +143,8 @@ export default function Financiamentos({ transactions = [], onAddMany, onDeleteB
         setBusy(true);
         try {
             const payloads = [];
-            const base = new Date();
+            const inicio = f.inicio || currentMonth();
+            const base = new Date(inicio + '-01T12:00:00');
             for (let n = f.parcelaAtual; n <= f.total; n++) {
                 const valor = Math.max(0, Math.round((f.valorAtual - (n - f.parcelaAtual) * f.desconto) * 100) / 100);
                 const date = new Date(base.getFullYear(), base.getMonth() + (n - f.parcelaAtual), f.dia);
@@ -274,6 +282,15 @@ export default function Financiamentos({ transactions = [], onAddMany, onDeleteB
                                     onChange={(e) => updateForm({ dia: e.target.value })}
                                 />
                             </div>
+                            <div className="space-y-1.5 col-span-2">
+                                <label className="text-xs font-medium text-emerald-300 uppercase tracking-wide">Início das parcelas (mês e ano)</label>
+                                <Input
+                                    type="month"
+                                    value={form.inicio}
+                                    onChange={(e) => updateForm({ inicio: e.target.value })}
+                                />
+                                <p className="text-[10px] text-slate-500">A parcela atual (ex.: 21/420) será lançada no dia {form.dia || 10} desse mês.</p>
+                            </div>
                         </div>
                         <p className="text-[11px] text-slate-400">
                             Desconto calculado automaticamente quando você informa a última parcela. Sua casa: (2.262,93 − 543,96) ÷ (420 − 21) = <strong className="text-emerald-400">R$ 4,31/mês</strong>.
@@ -322,12 +339,14 @@ export default function Financiamentos({ transactions = [], onAddMany, onDeleteB
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <h4 className="text-sm font-black text-white">{f.nome}</h4>
-                                    <span className="text-[10px] text-slate-500">vence dia {f.dia}</span>
+                                    <span className="text-[10px] text-slate-500">
+                                        vence dia {f.dia} • início {(() => { try { return new Date((f.inicio || currentMonth()) + '-01T12:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }); } catch { return ''; } })()}
+                                    </span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <button
                                         onClick={() => {
-                                            setForm({ ...emptyForm, ...f, valorAtual: numFormatter(f.valorAtual), valorFinal: numFormatter(f.valorFinal), desconto: numFormatter(f.desconto) });
+                                            setForm({ ...emptyForm, ...f, inicio: f.inicio || currentMonth(), valorAtual: numFormatter(f.valorAtual), valorFinal: numFormatter(f.valorFinal), desconto: numFormatter(f.desconto) });
                                             setEditingIndex(idx);
                                             setShowForm(true);
                                         }}
