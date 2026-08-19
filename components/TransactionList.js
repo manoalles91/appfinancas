@@ -3,11 +3,12 @@
 import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCircle2, Clock, Lock, Pencil, X, Check } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCircle2, Clock, Lock, Pencil, X, Check, Edit3 } from 'lucide-react';
 
 export default function TransactionList({ 
     transactions, 
     onDelete, 
+    onEdit, 
     onTogglePaid, 
     onAdjustAmount, 
     statusFilter = 'all', 
@@ -212,6 +213,15 @@ export default function TransactionList({
                     <span className={`text-sm font-semibold ${isPaid ? 'text-slate-400' : config.color}`}>
                         {config.sign}{formatCurrency(t.amount)}
                     </span>
+                    {onEdit && (
+                        <button
+                            onClick={() => onEdit(t)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-indigo-500/20 cursor-pointer"
+                            title="Editar"
+                        >
+                            <Edit3 className="h-3.5 w-3.5 text-indigo-400" />
+                        </button>
+                    )}
                     {onDelete && (
                         <button
                             onClick={() => onDelete(t.id)}

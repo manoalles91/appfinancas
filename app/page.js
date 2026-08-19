@@ -12,6 +12,7 @@ import CategoriesEditor from '@/components/CategoriesEditor';
 import { useToast } from '@/components/ui/toast';
 import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { getCategories, getGroupId } from '@/lib/categories';
 import { Card, CardContent } from '@/components/ui/card';
 
 const TABS = [
@@ -53,6 +54,22 @@ export default function Home() {
   const [cardToDelete, setCardToDelete] = useState(null);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [resetConfirmInput, setResetConfirmInput] = useState('');
+
+  // States para edição de transação
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [editGrupo, setEditGrupo] = useState('essenciais');
+
+  const openEditTransaction = (t) => {
+    const gid = getGroupId(t.category);
+    setEditGrupo(gid || 'outra');
+    setEditingTransaction({
+      ...t,
+      amount: String(Number(t.amount || 0).toFixed(2)).replace('.', ','),
+      date: (t.date || '').slice(0, 10),
+      subcategoria: t.subcategoria || '',
+      destino: t.destino || '',
+    });
+  };
 
   // Carrega nomes do localStorage (padrão Kelly se não definido)
   useEffect(() => {
@@ -303,6 +320,44 @@ export default function Home() {
     }
   }, [fetchData, toast]);
 
+  const handleUpdateTransaction = useCallback(async (e) => {
+    e.preventDefault();
+    if (!editingTransaction) return;
+    const amount = Math.max(0, parseFloat(String(editingTransaction.amount).replace(',', '.')) || 0);
+    if (amount <= 0) {
+      toast('Informe um valor válido.', 'error');
+      return;
+    }
+    try {
+      const payload = {
+        description: editingTransaction.description,
+        amount,
+        type: editingTransaction.type,
+        date: editingTransaction.date,
+        category: editingTransaction.category,
+        subcategoria: editingTransaction.subcategoria || '',
+        quem: editingTransaction.quem || 'Comum',
+        destino: editingTransaction.destino || '',
+        pago: !!editingTransaction.pago,
+        fixa: !!editingTransaction.fixa,
+        payment_method: editingTransaction.payment_method || 'checking',
+        card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
+        installment_info: editingTransaction.installment_info || null,
+      };
+      const { error } = await supabase
+        .from('transactions')
+        .update(payload)
+        .eq('id', editingTransaction.id);
+      if (error) throw error;
+      setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? { ...t, ...payload } : t));
+      setEditingTransaction(null);
+      toast('Transação atualizada!');
+    } catch (error) {
+      console.error('Error updating transaction:', error.message);
+      toast('Erro ao atualizar: ' + error.message, 'error');
+    }
+  }, [editingTransaction, toast]);
+
   const handleAddCard = async (e) => {
     e.preventDefault();
     if (!newCardData.nome.trim()) {
@@ -509,6 +564,7 @@ export default function Home() {
               <TransactionList
                 transactions={monthTransactions}
                 onDelete={setTxToDelete}
+                onEdit={openEditTransaction}
                 onTogglePaid={handleTogglePaid}
                 onAdjustAmount={handleAdjustAmount}
                 statusFilter={transactionStatusFilter}
@@ -933,6 +989,208 @@ export default function Home() {
                   SALVAR
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição de Transação */}
+      {editingTransaction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1e293b] border border-slate-700 w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-6 animate-scale-in overflow-y-auto max-h-[90vh]">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Edit3 className="h-5 w-5 text-indigo-400" /> Editar Transação
+              </h3>
+              <button onClick={() => setEditingTransaction(null)} className="text-slate-400 hover:text-white p-1 cursor-pointer">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateTransaction} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Descrição</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                  value={editingTransaction.description}
+                  onChange={(e) => setEditingTransaction({ ...editingTransaction, description: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Valor (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={editingTransaction.amount}
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, amount: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Data</label>
+                  <input
+                    type="date"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={editingTransaction.date}
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, date: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tipo</label>
+                  <select
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                    value={editingTransaction.type}
+                    onChange={(e) => {
+                      const type = e.target.value;
+                      setEditingTransaction((prev) => ({
+                        ...prev,
+                        type,
+                        payment_method: type === 'credit' ? 'credit' : prev.payment_method === 'credit' ? 'checking' : prev.payment_method,
+                        card_name: type === 'credit' ? prev.card_name : null,
+                      }));
+                    }}
+                  >
+                    <option value="expense">Despesa</option>
+                    <option value="income">Receita</option>
+                    <option value="credit">Cartão (crédito)</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Quem</label>
+                  <select
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                    value={editingTransaction.quem || 'Comum'}
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, quem: e.target.value })}
+                  >
+                    <option value="Eu">{partner1}</option>
+                    <option value="Outro">{partner2}</option>
+                    <option value="Comum">Comum</option>
+                    <option value="Comum - Eu">Comum ({partner1})</option>
+                    <option value="Comum - Outro">Comum ({partner2})</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Grupo</label>
+                  <select
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                    value={editGrupo}
+                    onChange={(e) => {
+                      const gid = e.target.value;
+                      setEditGrupo(gid);
+                      const g = getCategories().find((x) => x.id === gid);
+                      if (g && !g.categories.some((c) => c.name === editingTransaction.category)) {
+                        setEditingTransaction((prev) => ({ ...prev, category: g.categories[0].name, subcategoria: '' }));
+                      }
+                    }}
+                  >
+                    {getCategories().map((g) => (
+                      <option key={g.id} value={g.id}>{g.emoji} {g.label}</option>
+                    ))}
+                    <option value="outra">✏️ Outra categoria</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoria</label>
+                  {editGrupo !== 'outra' ? (
+                    <select
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                      value={editingTransaction.category}
+                      onChange={(e) => setEditingTransaction({ ...editingTransaction, category: e.target.value })}
+                    >
+                      {(getCategories().find((g) => g.id === editGrupo)?.categories || []).map((c) => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                      value={editingTransaction.category || ''}
+                      onChange={(e) => setEditingTransaction({ ...editingTransaction, category: e.target.value })}
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Item (opcional)</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Parcela Casa"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={editingTransaction.subcategoria}
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, subcategoria: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Destino/Origem (opcional)</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Bradesco, mercado"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={editingTransaction.destino}
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, destino: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {editingTransaction.type === 'credit' && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cartão</label>
+                  <select
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                    value={editingTransaction.card_name || ''}
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, card_name: e.target.value })}
+                  >
+                    <option value="">— Nenhum —</option>
+                    {cartoes.map((c) => (
+                      <option key={c.id} value={c.nome}>{c.nome}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex gap-6">
+                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!editingTransaction.pago}
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, pago: e.target.checked })}
+                    className="accent-emerald-500 h-4 w-4"
+                  />
+                  Pago
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!editingTransaction.fixa}
+                    onChange={(e) => setEditingTransaction({ ...editingTransaction, fixa: e.target.checked })}
+                    className="accent-blue-500 h-4 w-4"
+                  />
+                  Fixa
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 cursor-pointer"
+              >
+                SALVAR ALTERAÇÕES
+              </button>
             </form>
           </div>
         </div>
