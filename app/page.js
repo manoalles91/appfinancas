@@ -303,13 +303,19 @@ export default function Home() {
 
   const handleUpdateCard = async (e) => {
     e.preventDefault();
+    if (!editingCard.nome.trim()) {
+      toast('Por favor, informe o nome do cartão.', 'error');
+      return;
+    }
     try {
       const { error } = await supabase
         .from('cartoes')
         .update({
-          limite: editingCard.limite,
-          vencimento: editingCard.vencimento,
-          fechamento: editingCard.fechamento
+          nome: editingCard.nome.trim(),
+          bandeira: editingCard.bandeira || 'MasterCard',
+          limite: Number(editingCard.limite || 0),
+          vencimento: Number(editingCard.vencimento || 10),
+          fechamento: Number(editingCard.fechamento || 3)
         })
         .eq('id', editingCard.id);
 
@@ -796,6 +802,34 @@ export default function Home() {
             </div>
 
             <form onSubmit={handleUpdateCard} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nome do Cartão</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Nubank, Inter..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={editingCard.nome}
+                    onChange={(e) => setEditingCard({...editingCard, nome: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Bandeira</label>
+                  <select
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                    value={editingCard.bandeira || 'MasterCard'}
+                    onChange={(e) => setEditingCard({...editingCard, bandeira: e.target.value})}
+                  >
+                    <option value="MasterCard">MasterCard</option>
+                    <option value="Visa">Visa</option>
+                    <option value="Elo">Elo</option>
+                    <option value="Amex">American Express</option>
+                    <option value="Outra">Outra</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Limite Total (R$)</label>
                 <input
