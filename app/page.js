@@ -10,7 +10,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import CSVManager from '@/components/CSVManager';
 import CategoriesEditor from '@/components/CategoriesEditor';
 import { useToast } from '@/components/ui/toast';
-import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X } from 'lucide-react';
+import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getCategories, getGroupId } from '@/lib/categories';
 import { Card, CardContent } from '@/components/ui/card';
@@ -54,6 +54,18 @@ export default function Home() {
   const [cardToDelete, setCardToDelete] = useState(null);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [resetConfirmInput, setResetConfirmInput] = useState('');
+
+  // States para reajuste manual de fatura por mês
+  const [reajusteFatura, setReajusteFatura] = useState(null);
+  const [ajusteVersion, setAjusteVersion] = useState(0);
+
+  const getAjustesFaturas = () => {
+    try {
+      return JSON.parse(localStorage.getItem('fincasal_ajustes_faturas')) || {};
+    } catch {
+      return {};
+    }
+  };
 
   // States para edição de transação
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -125,8 +137,11 @@ export default function Home() {
   }, [transactions, viewDate]);
 
   const cardsSummary = useMemo(() => {
+    void ajusteVersion;
     const viewMonth = viewDate.getMonth();
     const viewYear = viewDate.getFullYear();
+    const ajustes = getAjustesFaturas();
+    const monthKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
 
     return cartoes.map(card => {
       const matches = transactions.filter(t => {
@@ -137,20 +152,25 @@ export default function Home() {
                d.getFullYear() === viewYear;
       });
 
-      const faturaAtual = matches.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+      const soma = matches.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+      const key = `${card.nome}|${monthKey}`;
+      const ajustado = ajustes[key];
+      const faturaAtual = ajustado != null ? Number(ajustado) : soma;
+      const isAjustada = ajustado != null;
       const isPaga = matches.length > 0 && matches.every(t => t.pago);
       const limite = Number(card.limite || 0);
 
       return {
         ...card,
         faturaAtual,
+        isAjustada,
         isPaga,
         totalItems: matches.length,
         disponivel: limite - faturaAtual,
         percentual: limite > 0 ? (faturaAtual / limite) * 100 : 0
       };
     });
-  }, [cartoes, transactions, viewDate]);
+  }, [cartoes, transactions, viewDate, ajusteVersion]);
 
   const pendingUrgentTransactions = useMemo(() => {
     const today = new Date();
@@ -278,6 +298,38 @@ export default function Home() {
       toast('Erro ao atualizar fatura: ' + error.message, 'error');
     }
   }, [transactions, viewDate, toast]);
+
+  const openFaturaAdjust = (card) => {
+    const ajustes = getAjustesFaturas();
+    const month = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
+    const key = `${card.nome}|${month}`;
+    const existing = ajustes[key];
+    setReajusteFatura({
+      cardName: card.nome,
+      month,
+      value: existing != null ? String(existing) : (card.faturaAtual > 0 ? String(card.faturaAtual) : ''),
+      hasAdjust: existing != null
+    });
+  };
+
+  const saveFaturaAdjust = useCallback((e) => {
+    e.preventDefault();
+    if (!reajusteFatura) return;
+    const value = Math.max(0, parseFloat(String(reajusteFatura.value).replace(',', '.')) || 0);
+    const ajustes = getAjustesFaturas();
+    const key = `${reajusteFatura.cardName}|${reajusteFatura.month}`;
+    if (value > 0) {
+      ajustes[key] = value;
+    } else {
+      delete ajustes[key];
+    }
+    localStorage.setItem('fincasal_ajustes_faturas', JSON.stringify(ajustes));
+    setAjusteVersion(v => v + 1);
+    setReajusteFatura(null);
+    toast(value > 0
+      ? `Fatura de ${reajusteFatura.cardName} ajustada para R$ ${value.toFixed(2).replace('.', ',')}.`
+      : `Ajuste da fatura de ${reajusteFatura.cardName} removido.`);
+  }, [reajusteFatura, toast]);
 
   const handleTogglePaid = useCallback(async (id, newStatus) => {
     try {
@@ -690,6 +742,11 @@ export default function Home() {
                         }`}>
                           {card.isPaga ? 'Paga' : 'Aberta'}
                         </span>
+                        {card.isAjustada && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+                            AJUSTADA
+                          </span>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-3 gap-2 text-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
@@ -755,6 +812,12 @@ export default function Home() {
                             COMPRAS
                           </button>
                         </div>
+                        <button
+                          onClick={() => openFaturaAdjust(card)}
+                          className="w-full py-2 bg-indigo-950/50 hover:bg-indigo-900/50 text-indigo-300 hover:text-indigo-200 text-[11px] font-bold rounded-xl transition-all border border-indigo-500/30 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <SlidersHorizontal className="h-3 w-3" /> REAJUSTAR FATURA
+                        </button>
                         <button
                           onClick={() => { setEditingCard(card); setIsEditModalOpen(true); }}
                           className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-[11px] font-bold rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
@@ -1033,6 +1096,63 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all border border-slate-700 cursor-pointer"
+                >
+                  CANCELAR
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 cursor-pointer"
+                >
+                  SALVAR
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Reajuste de Fatura */}
+      {reajusteFatura && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1e293b] border border-slate-700 w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-6 animate-scale-in">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <SlidersHorizontal className="h-5 w-5 text-indigo-400" /> Reajustar Fatura — {reajusteFatura.cardName}
+              </h3>
+              <button onClick={() => setReajusteFatura(null)} className="text-slate-400 hover:text-white p-1 cursor-pointer">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <form onSubmit={saveFaturaAdjust} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mês da Fatura</label>
+                <input
+                  type="month"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                  value={reajusteFatura.month}
+                  onChange={(e) => setReajusteFatura({ ...reajusteFatura, month: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Valor da Fatura (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ex: 1234,56"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                  value={reajusteFatura.value}
+                  onChange={(e) => setReajusteFatura({ ...reajusteFatura, value: e.target.value })}
+                />
+                <p className="text-[11px] text-slate-500">Deixe em branco ou 0 para remover o ajuste deste mês.</p>
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setReajusteFatura(null)}
                   className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all border border-slate-700 cursor-pointer"
                 >
                   CANCELAR
