@@ -74,6 +74,11 @@ export default function Home() {
   const openEditTransaction = (t) => {
     const gid = getGroupId(t.category);
     const m = String(t.installment_info || '').match(/^(\d+)\s*\/\s*(\d+)$/);
+    let seriesSize = 0;
+    if (m) {
+      const re = new RegExp(`^(\\d+)/${m[2]}$`);
+      seriesSize = transactions.filter(x => x.id !== t.id && x.description === t.description && re.test(String(x.installment_info || ''))).length;
+    }
     setEditGrupo(gid || 'outra');
     setEditingTransaction({
       ...t,
@@ -85,6 +90,8 @@ export default function Home() {
       parcelaN: m ? m[1] : '',
       parcelaTotal: m ? m[2] : '',
       valorTipo: m ? 'parcela' : 'total',
+      seriesSize,
+      applyToAll: seriesSize > 0,
     });
   };
 
@@ -394,6 +401,7 @@ export default function Home() {
       siblings = transactions.filter(t => t.id !== editingTransaction.id && t.description === editingTransaction.description && re.test(String(t.installment_info || '')));
     }
     const needsSplit = validParcela && parcTotal > 1 && siblings.length === 0;
+    const applyToAll = needsSplit ? false : !!editingTransaction.applyToAll && siblings.length > 0;
     const valorTipo = editingTransaction.valorTipo === 'parcela' ? 'parcela' : 'total';
     const base = needsSplit
       ? (valorTipo === 'parcela' ? amount : Math.round((amount / parcTotal) * 100) / 100)
@@ -415,6 +423,24 @@ export default function Home() {
         card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
         installment_info,
       };
+
+      const amountMap = {};
+      if (applyToAll) {
+        const perInstall = valorTipo === 'parcela'
+          ? amount
+          : Math.round((amount / parcTotal) * 100) / 100;
+        const lastAmount = valorTipo === 'parcela'
+          ? amount
+          : Math.round((amount - perInstall * (parcTotal - 1)) * 100) / 100;
+        [...siblings, { id: editingTransaction.id, installment_info }].forEach(s => {
+          const m2 = String(s.installment_info || '').match(/^(\d+)\/(\d+)$/);
+          const n = m2 ? parseInt(m2[1], 10) : parcN;
+          amountMap[s.id] = n === parcTotal ? lastAmount : perInstall;
+        });
+        payload.amount = amountMap[editingTransaction.id];
+      } else {
+        amountMap[editingTransaction.id] = base;
+      }
 
       let created = [];
       if (needsSplit) {
@@ -453,12 +479,28 @@ export default function Home() {
         .update(payload)
         .eq('id', editingTransaction.id);
       if (error) throw error;
+
+      for (const [id, val] of Object.entries(amountMap)) {
+        const { error: upErr } = await supabase
+          .from('transactions')
+          .update({ amount: val })
+          .eq('id', id);
+        if (upErr) throw upErr;
+      }
+
       setTransactions(prev => {
-        const rest = prev.map(t => t.id === editingTransaction.id ? { ...t, ...payload } : t);
+        const rest = prev.map(t => {
+          if (amountMap[t.id] != null) return { ...t, amount: amountMap[t.id] };
+          return t.id === editingTransaction.id ? { ...t, ...payload } : t;
+        });
         return needsSplit ? [...rest, ...created] : rest;
       });
       setEditingTransaction(null);
-      toast(needsSplit ? `Transação dividida em ${parcTotal} parcelas mensais!` : 'Transação atualizada!');
+      toast(applyToAll
+        ? `Valor aplicado às ${parcTotal} parcelas da série!`
+        : needsSplit
+          ? `Transação dividida em ${parcTotal} parcelas mensais!`
+          : 'Transação atualizada!');
     } catch (error) {
       console.error('Error updating transaction:', error.message);
       toast('Erro ao atualizar: ' + error.message, 'error');
@@ -1381,6 +1423,17 @@ export default function Home() {
                           ? `Cada uma das ${editingTransaction.parcelaTotal || 'N'} parcelas terá esse valor (total de ${(parseFloat(String(editingTransaction.amount).replace(',', '.')) || 0) * (parseInt(editingTransaction.parcelaTotal, 10) || 1)}).`
                           : `Ao salvar, o valor total é dividido em ${editingTransaction.parcelaTotal || 'N'} parcelas mensais (a última recebe a diferença de centavos).`}
                       </p>
+                      {editingTransaction.seriesSize > 0 && (
+                        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none p-3 rounded-xl bg-slate-900/60 border border-slate-700/60">
+                          <input
+                            type="checkbox"
+                            checked={editingTransaction.applyToAll}
+                            onChange={(e) => setEditingTransaction({ ...editingTransaction, applyToAll: e.target.checked })}
+                            className="h-4 w-4 accent-indigo-500"
+                          />
+                          Aplicar o novo valor a todas as {editingTransaction.parcelaTotal} parcelas da série
+                        </label>
+                      )}
                     </div>
                   )}
                 </div>
