@@ -597,7 +597,7 @@ export default function Home() {
     );
   }
 
-  const monthName = viewDate.toLocaleDateString('pt-BR', { month: 'long' });
+  const monthName = viewDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
   const openTransactionsWithPending = () => {
