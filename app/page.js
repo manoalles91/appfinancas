@@ -61,6 +61,7 @@ export default function Home() {
 
   const openEditTransaction = (t) => {
     const gid = getGroupId(t.category);
+    const m = String(t.installment_info || '').match(/^(\d+)\s*\/\s*(\d+)$/);
     setEditGrupo(gid || 'outra');
     setEditingTransaction({
       ...t,
@@ -68,6 +69,9 @@ export default function Home() {
       date: (t.date || '').slice(0, 10),
       subcategoria: t.subcategoria || '',
       destino: t.destino || '',
+      isParcela: !!m,
+      parcelaN: m ? m[1] : '',
+      parcelaTotal: m ? m[2] : '',
     });
   };
 
@@ -325,6 +329,11 @@ export default function Home() {
       toast('Informe um valor válido.', 'error');
       return;
     }
+    const parcN = parseInt(editingTransaction.parcelaN, 10) || 0;
+    const parcTotal = parseInt(editingTransaction.parcelaTotal, 10) || 0;
+    const installment_info = editingTransaction.isParcela && parcN > 0 && parcTotal >= parcN
+      ? `${parcN}/${parcTotal}`
+      : null;
     try {
       const payload = {
         description: editingTransaction.description,
@@ -339,7 +348,7 @@ export default function Home() {
         fixa: !!editingTransaction.fixa,
         payment_method: editingTransaction.payment_method || 'checking',
         card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
-        installment_info: editingTransaction.installment_info || null,
+        installment_info,
       };
       const { error } = await supabase
         .from('transactions')
@@ -1145,7 +1154,43 @@ export default function Home() {
                 </div>
               </div>
 
-              {editingTransaction.type === 'credit' && (
+              <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!editingTransaction.isParcela}
+                      onChange={(e) => setEditingTransaction({ ...editingTransaction, isParcela: e.target.checked })}
+                      className="accent-indigo-500 h-4 w-4"
+                    />
+                    É parcelado (aparece {'"n/total"'} na lista)
+                  </label>
+                  {editingTransaction.isParcela && (
+                    <div className="grid grid-cols-2 gap-4 animate-fade-in">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Parcela nº</label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                          value={editingTransaction.parcelaN}
+                          onChange={(e) => setEditingTransaction({ ...editingTransaction, parcelaN: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total de parcelas</label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                          value={editingTransaction.parcelaTotal}
+                          onChange={(e) => setEditingTransaction({ ...editingTransaction, parcelaTotal: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {editingTransaction.type === 'credit' && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cartão</label>
                   <select
