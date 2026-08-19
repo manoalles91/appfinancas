@@ -470,6 +470,7 @@ export default function Home() {
                 partner2={partner2}
                 selectedCardFilter={selectedCardFilter}
                 onClearCardFilter={() => setSelectedCardFilter(null)}
+                viewDate={viewDate}
               />
             </div>
           </div>

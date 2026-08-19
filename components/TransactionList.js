@@ -13,7 +13,8 @@ export default function TransactionList({
     partner1 = 'Alle', 
     partner2 = 'Kelly',
     selectedCardFilter,
-    onClearCardFilter 
+    onClearCardFilter,
+    viewDate
 }) {
     const [filter, setFilter] = useState('all'); // all | income | expense | credit
     const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum
@@ -45,7 +46,12 @@ export default function TransactionList({
         return list;
     }, [transactions, filter, spenderFilter, selectedCardFilter]);
 
-    const pendingList = useMemo(() => filteredTransactions.filter(t => !t.pago), [filteredTransactions]);
+    const pendingList = useMemo(() => filteredTransactions.filter(t => {
+        if (t.pago) return false;
+        if (!t.date || !viewDate) return false;
+        const d = new Date(t.date);
+        return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
+    }), [filteredTransactions, viewDate]);
     const paidList = useMemo(() => filteredTransactions.filter(t => t.pago), [filteredTransactions]);
 
     const sum = (list) => list.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -351,7 +357,7 @@ export default function TransactionList({
             </CardHeader>
             <CardContent>
                 <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
-                    {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingList.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300', true)}
+                    {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingList.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300', false)}
                     {showPaid && renderSection('Pagas', '✅', displayedPaid, paidTotal, paidList.length, showAllPaid, setShowAllPaid, 'text-emerald-400', 'text-emerald-300', false)}
                     {pendingList.length === 0 && paidList.length === 0 && (
                         <p className="text-center text-muted-foreground text-sm py-8">Nenhuma transação encontrada.</p>
