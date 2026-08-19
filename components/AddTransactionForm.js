@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, CreditCard, ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronUp } from 'lucide-react';
-import { CATEGORY_GROUPS } from '@/lib/categories';
+import { getCategories } from '@/lib/categories';
 import { useToast } from '@/components/ui/toast';
 
 const TRANSACTION_TYPES = [
@@ -25,7 +25,9 @@ const initialForm = () => ({
     pago: false,
     fixa: false,
     repeats: 12,
-    monthlyDrop: 0,
+    variacaoTipo: 'none',
+    variacaoValor: 0,
+    variacaoUnidade: 'percent',
     payment_method: 'checking',
     quem: 'Comum',
     subcategoria: '',
@@ -38,9 +40,8 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
     const [selectedGroup, setSelectedGroup] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('');
     const [formData, setFormData] = useState(initialForm());
+    const [groupOptions, setGroupOptions] = useState(() => getCategories());
     const { toast } = useToast();
-
-    const groupOptions = CATEGORY_GROUPS;
     const categoryOptions = selectedGroup
         ? (groupOptions.find((g) => g.id === selectedGroup)?.categories || [])
         : [];
@@ -108,7 +109,9 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
             } else if (formData.fixa) {
                 const baseDate = new Date(formData.date);
                 const total = Math.max(1, Math.min(600, parseInt(formData.repeats, 10) || 12));
-                const drop = Math.max(0, parseFloat(String(formData.monthlyDrop).replace(',', '.')) || 0);
+                const variacaoTipo = formData.variacaoTipo || 'none';
+                const variacaoValor = Math.max(0, parseFloat(String(formData.variacaoValor).replace(',', '.')) || 0);
+                const unidade = formData.variacaoUnidade === 'reais' ? 'reais' : 'percent';
                 const payloads = [];
                 let currentAmount = baseAmount;
 
@@ -129,7 +132,12 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                         subcategoria: formData.subcategoria,
                         destino: formData.destino,
                     });
-                    currentAmount = currentAmount * (1 - drop / 100);
+
+                    if (variacaoTipo === 'aumento') {
+                        currentAmount = unidade === 'reais' ? currentAmount + variacaoValor : currentAmount * (1 + variacaoValor / 100);
+                    } else if (variacaoTipo === 'reducao') {
+                        currentAmount = Math.max(0, unidade === 'reais' ? currentAmount - variacaoValor : currentAmount * (1 - variacaoValor / 100));
+                    }
                 }
 
                 if (onAddMany) {
@@ -396,19 +404,48 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                                             />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Redução mensal (%)</label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                placeholder="0 = valor fixo"
-                                                value={formData.monthlyDrop}
-                                                onChange={(e) => setFormData({ ...formData, monthlyDrop: e.target.value })}
-                                            />
+                                            <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Variação mensal</label>
+                                            <select
+                                                value={formData.variacaoTipo}
+                                                onChange={(e) => setFormData({ ...formData, variacaoTipo: e.target.value })}
+                                                className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
+                                            >
+                                                <option value="none">Nenhuma (valor fixo)</option>
+                                                <option value="reducao">Redução</option>
+                                                <option value="aumento">Aumento</option>
+                                            </select>
                                         </div>
                                     </div>
+
+                                    {formData.variacaoTipo !== 'none' && (
+                                        <div className="grid grid-cols-2 gap-3 animate-fade-in">
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Valor da variação</label>
+                                                <Input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    placeholder={formData.variacaoUnidade === 'reais' ? 'Ex: 4,31' : 'Ex: 0,5'}
+                                                    value={formData.variacaoValor}
+                                                    onChange={(e) => setFormData({ ...formData, variacaoValor: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Unidade</label>
+                                                <select
+                                                    value={formData.variacaoUnidade}
+                                                    onChange={(e) => setFormData({ ...formData, variacaoUnidade: e.target.value })}
+                                                    className="flex h-[38px] w-full rounded-lg border border-input bg-secondary/50 px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 transition-all duration-200 cursor-pointer"
+                                                >
+                                                    <option value="percent">% (porcentagem)</option>
+                                                    <option value="reais">R$ (reais)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <p className="text-[11px] text-blue-300/60">
-                                        Cada mês = valor anterior × (1 - redução%). Ex.: financiamento de 480x caindo 0,1% ao mês.
+                                        Cada mês = valor anterior {formData.variacaoTipo === 'aumento' ? '+ variação' : formData.variacaoTipo === 'reducao' ? '− variação' : '(valor fixo)'}. Ex.: parcela da casa caindo R$ 4,31/mês.
                                     </p>
                                 </div>
                             )}

@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useMemo } from 'react';
-import { CATEGORY_GROUPS, getGroupId } from '@/lib/categories';
+import { CATEGORY_GROUPS, getGroupId, getCategories } from '@/lib/categories';
 
 const GROUP_COLORS = {
     essenciais: '#60a5fa',
@@ -93,6 +93,7 @@ export default function Reports({ transactions = [] }) {
     }, [txs]);
 
     const groupData = useMemo(() => {
+        const groups = getCategories();
         const totals = {};
         let total = 0;
         txs
@@ -106,7 +107,7 @@ export default function Reports({ transactions = [] }) {
         return {
             totals,
             total,
-            groups: CATEGORY_GROUPS
+            groups: groups
                 .filter(g => totals[g.id])
                 .map(g => ({ ...g, value: totals[g.id], percent: total > 0 ? (totals[g.id] / total) * 100 : 0 }))
                 .sort((a, b) => b.value - a.value),

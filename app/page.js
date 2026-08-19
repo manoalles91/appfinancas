@@ -8,6 +8,7 @@ import Reports from '@/components/Reports';
 import NavTabs from '@/components/NavTabs';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import CSVManager from '@/components/CSVManager';
+import CategoriesEditor from '@/components/CategoriesEditor';
 import { useToast } from '@/components/ui/toast';
 import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -666,6 +667,8 @@ export default function Home() {
                 <p className="text-xs text-slate-500">Os nomes são salvos automaticamente neste dispositivo.</p>
               </CardContent>
             </Card>
+
+            <CategoriesEditor />
 
             <Card className="animate-slide-up border-red-500/20">
               <CardContent className="p-6 space-y-3">
