@@ -1,8 +1,9 @@
 'use client';
 
 import { Card, CardContent } from '@/components/ui/card';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { CalendarClock, AlertCircle, CalendarDays } from 'lucide-react';
+import Balances from '@/components/Balances';
 
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -21,6 +22,13 @@ const formatDate = (dateString) => {
 export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly' }) {
     const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
     const allTxs = useMemo(() => (Array.isArray(allTransactions) ? allTransactions : []), [allTransactions]);
+
+    const [manualSaldo, setManualSaldo] = useState(() => {
+        if (typeof window === 'undefined') return 0;
+        const a = parseFloat(localStorage.getItem('fincasal_saldo_alle')) || 0;
+        const k = parseFloat(localStorage.getItem('fincasal_saldo_kelly')) || 0;
+        return a + k;
+    });
 
     const summary = useMemo(() => {
         const income = txs
@@ -49,7 +57,6 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
     }, [txs]);
 
     const financeSummary = useMemo(() => {
-        let saldoAtual = 0;
         let pendingIncome = 0;
         let pendingExpense = 0;
 
@@ -57,21 +64,19 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
             if (!t) return;
             const amt = Number(t.amount || 0);
             if (t.type === 'income') {
-                if (t.pago) saldoAtual += amt;
-                else pendingIncome += amt;
+                if (!t.pago) pendingIncome += amt;
             } else if (t.type === 'expense' || t.type === 'credit') {
-                if (t.pago) saldoAtual -= amt;
-                else pendingExpense += amt;
+                if (!t.pago) pendingExpense += amt;
             }
         });
 
         return {
-            saldoAtual,
-            previsto: saldoAtual + pendingIncome - pendingExpense,
+            saldoAtual: manualSaldo,
+            previsto: manualSaldo + pendingIncome - pendingExpense,
             pendingIncome,
             pendingExpense,
         };
-    }, [allTxs]);
+    }, [allTxs, manualSaldo]);
 
     const dueExpenses = useMemo(() => {
         const today = new Date();
@@ -167,23 +172,26 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
             {/* Hero: saldo atual + previsto do mês */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-br from-[#1e293b] to-[#16213a] p-6 md:p-8 shadow-2xl animate-fade-in">
                 <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
-                <div className="relative grid gap-8 md:grid-cols-2">
-                    <div className="space-y-1">
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Saldo Atual</p>
-                        <p className={`text-4xl md:text-5xl font-black tracking-tight ${financeSummary.saldoAtual >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {formatCurrency(financeSummary.saldoAtual)}
-                        </p>
-                        <p className="text-xs text-slate-500">Tudo que já entrou menos tudo que já saiu.</p>
-                    </div>
-                    <div className="space-y-1 md:border-l md:border-slate-800 md:pl-8">
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Previsto Fim do Mês</p>
-                        <p className={`text-4xl md:text-5xl font-black tracking-tight ${financeSummary.previsto >= 0 ? 'text-indigo-400' : 'text-red-400'}`}>
-                            {formatCurrency(financeSummary.previsto)}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                            Saldo atual + <span className="text-emerald-400 font-bold">{formatCurrency(financeSummary.pendingIncome)}</span> a receber
-                            {' '}- <span className="text-red-400 font-bold">{formatCurrency(financeSummary.pendingExpense)}</span> a pagar
-                        </p>
+                <div className="relative space-y-6">
+                    <Balances partner1={partner1} partner2={partner2} onChange={setManualSaldo} />
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1">
+                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Saldo Atual (Soma)</p>
+                            <p className={`text-4xl md:text-5xl font-black tracking-tight ${financeSummary.saldoAtual >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {formatCurrency(financeSummary.saldoAtual)}
+                            </p>
+                            <p className="text-xs text-slate-500">Saldo {partner1} + Saldo {partner2} (editável acima).</p>
+                        </div>
+                        <div className="space-y-1 md:border-l md:border-slate-800 md:pl-8">
+                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Previsto Fim do Mês</p>
+                            <p className={`text-4xl md:text-5xl font-black tracking-tight ${financeSummary.previsto >= 0 ? 'text-indigo-400' : 'text-red-400'}`}>
+                                {formatCurrency(financeSummary.previsto)}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                                Saldo atual + <span className="text-emerald-400 font-bold">{formatCurrency(financeSummary.pendingIncome)}</span> a receber
+                                {' '}- <span className="text-red-400 font-bold">{formatCurrency(financeSummary.pendingExpense)}</span> a pagar
+                            </p>
+                        </div>
                     </div>
                 </div>
                 <div className="relative mt-6 pt-4 border-t border-slate-800 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
