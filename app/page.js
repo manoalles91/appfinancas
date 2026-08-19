@@ -72,6 +72,7 @@ export default function Home() {
       isParcela: !!m,
       parcelaN: m ? m[1] : '',
       parcelaTotal: m ? m[2] : '',
+      valorTipo: m ? 'parcela' : 'total',
     });
   };
 
@@ -341,7 +342,10 @@ export default function Home() {
       siblings = transactions.filter(t => t.id !== editingTransaction.id && t.description === editingTransaction.description && re.test(String(t.installment_info || '')));
     }
     const needsSplit = validParcela && parcTotal > 1 && siblings.length === 0;
-    const base = needsSplit ? Math.round((amount / parcTotal) * 100) / 100 : amount;
+    const valorTipo = editingTransaction.valorTipo === 'parcela' ? 'parcela' : 'total';
+    const base = needsSplit
+      ? (valorTipo === 'parcela' ? amount : Math.round((amount / parcTotal) * 100) / 100)
+      : amount;
 
     try {
       const payload = {
@@ -362,7 +366,9 @@ export default function Home() {
 
       let created = [];
       if (needsSplit) {
-        const lastAmount = Math.round((amount - base * (parcTotal - 1)) * 100) / 100;
+        const lastAmount = valorTipo === 'parcela'
+          ? amount
+          : Math.round((amount - base * (parcTotal - 1)) * 100) / 100;
         const baseDate = new Date((editingTransaction.date || new Date().toISOString().slice(0, 10)) + 'T12:00:00');
         const inserts = [];
         for (let i = 1; i <= parcTotal; i++) {
@@ -1231,8 +1237,29 @@ export default function Home() {
                           />
                         </div>
                       </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { value: 'total', label: '💰 Valor total (divide em N)' },
+                          { value: 'parcela', label: '📆 Valor da parcela (cada uma)' },
+                        ].map((o) => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            onClick={() => setEditingTransaction({ ...editingTransaction, valorTipo: o.value })}
+                            className={`rounded-xl px-3 py-2.5 text-[11px] font-bold transition-all cursor-pointer border ${
+                              editingTransaction.valorTipo === o.value
+                                ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg'
+                                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
                       <p className="text-[11px] text-indigo-300/70">
-                        Ao salvar, o valor é dividido em {editingTransaction.parcelaTotal || 'N'} parcelas mensais (a última recebe a diferença de centavos).
+                        {editingTransaction.valorTipo === 'parcela'
+                          ? `Cada uma das ${editingTransaction.parcelaTotal || 'N'} parcelas terá esse valor (total de ${(parseFloat(String(editingTransaction.amount).replace(',', '.')) || 0) * (parseInt(editingTransaction.parcelaTotal, 10) || 1)}).`
+                          : `Ao salvar, o valor total é dividido em ${editingTransaction.parcelaTotal || 'N'} parcelas mensais (a última recebe a diferença de centavos).`}
                       </p>
                     </div>
                   )}
