@@ -1,15 +1,8 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
+import { Card, CardContent } from '@/components/ui/card';
 import { useMemo } from 'react';
-import { Wallet, TrendingUp, TrendingDown, CreditCard } from 'lucide-react';
-
-const PIE_COLORS = [
-    '#818cf8', '#f472b6', '#fb923c', '#34d399',
-    '#38bdf8', '#fbbf24', '#a78bfa', '#f87171',
-    '#2dd4bf', '#c084fc', '#fb7185', '#4ade80',
-];
+import { CalendarClock, AlertCircle, CalendarDays } from 'lucide-react';
 
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -18,32 +11,27 @@ const formatCurrency = (value) => {
     }).format(value);
 };
 
-const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-        return (
-            <div className="glass-card rounded-lg px-3 py-2 text-xs shadow-xl border border-white/10 bg-slate-900/90 backdrop-blur-md">
-                <p className="font-medium text-slate-300">Dia {label}</p>
-                <p className={`font-bold ${payload[0].value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {formatCurrency(payload[0].value)}
-                </p>
-            </div>
-        );
-    }
-    return null;
+const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+    });
 };
 
-export default function Dashboard({ transactions = [], partner1 = 'Alle', partner2 = 'Kelly' }) {
+export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly' }) {
+    const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
+    const allTxs = useMemo(() => (Array.isArray(allTransactions) ? allTransactions : []), [allTransactions]);
+
     const summary = useMemo(() => {
-        const txs = Array.isArray(transactions) ? transactions : [];
         const income = txs
             .filter((t) => t && t.type === 'income')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
-        
+
         const checkingPaidExpenses = txs
             .filter((t) => t && t.payment_method === 'checking' && (t.type === 'expense' || t.type === 'credit') && t.pago)
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        const checkingBalance = income - checkingPaidExpenses;
+        const balance = income - checkingPaidExpenses;
 
         const creditExpenses = txs
             .filter((t) => t && t.payment_method === 'credit')
@@ -52,58 +40,72 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
         const fixedTotal = txs
             .filter((t) => t && t.fixa)
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
-        
+
         const fixedPaid = txs
             .filter((t) => t && t.fixa && t.pago)
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
+        return { income, balance, creditExpenses, fixedTotal, fixedPaid };
+    }, [txs]);
+
+    const financeSummary = useMemo(() => {
+        let saldoAtual = 0;
+        let pendingIncome = 0;
+        let pendingExpense = 0;
+
+        allTxs.forEach((t) => {
+            if (!t) return;
+            const amt = Number(t.amount || 0);
+            if (t.type === 'income') {
+                if (t.pago) saldoAtual += amt;
+                else pendingIncome += amt;
+            } else if (t.type === 'expense' || t.type === 'credit') {
+                if (t.pago) saldoAtual -= amt;
+                else pendingExpense += amt;
+            }
+        });
+
+        return {
+            saldoAtual,
+            previsto: saldoAtual + pendingIncome - pendingExpense,
+            pendingIncome,
+            pendingExpense,
+        };
+    }, [allTxs]);
+
+    const dueExpenses = useMemo(() => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const limitDate = new Date(today);
         limitDate.setDate(today.getDate() + 7);
 
-        let efetivadas = 0;
-        let proximoVencimento = 0;
-        let vencidas = 0;
-        let distanteVencimento = 0;
+        const vencidas = [];
+        const proximas = [];
 
-        txs.filter(t => t && (t.type === 'expense' || t.type === 'credit')).forEach(t => {
-            const amt = Number(t.amount || 0);
-            if (t.pago) {
-                efetivadas += amt;
-            } else {
-                const d = new Date(t.date + 'T00:00:00');
-                if (d < today) {
-                    vencidas += amt;
-                } else if (d <= limitDate) {
-                    proximoVencimento += amt;
-                } else {
-                    distanteVencimento += amt;
-                }
-            }
+        allTxs.forEach((t) => {
+            if (!t || t.pago || (t.type !== 'expense' && t.type !== 'credit') || !t.date) return;
+            const d = new Date(t.date + 'T00:00:00');
+            if (isNaN(d.getTime())) return;
+            const diff = Math.floor((d - today) / 86400000);
+            if (diff < 0) vencidas.push({ ...t, _days: Math.abs(diff) });
+            else if (diff <= 7) proximas.push({ ...t, _days: diff });
         });
 
-        const totalDespesasAll = efetivadas + proximoVencimento + vencidas + distanteVencimento;
+        vencidas.sort((a, b) => b._days - a._days);
+        proximas.sort((a, b) => a._days - b._days);
 
-        return { 
-            income, 
-            expense: checkingPaidExpenses + creditExpenses, 
-            balance: checkingBalance, 
-            creditTotal: creditExpenses,
-            fixedTotal,
-            fixedPaid,
-            efetivadas,
-            proximoVencimento,
+        const sum = (list) => list.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        return {
             vencidas,
-            distanteVencimento,
-            totalDespesasAll
+            proximas,
+            totalVencidas: sum(vencidas),
+            totalProximas: sum(proximas),
+            totalGeral: sum(vencidas) + sum(proximas),
         };
-    }, [transactions]);
+    }, [allTxs]);
 
     const coupleSummary = useMemo(() => {
-        const txs = Array.isArray(transactions) ? transactions : [];
-        
-        // personal expenses
         const p1Personal = txs
             .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Eu')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -112,12 +114,10 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
             .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Outro')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        // common expenses
         const commonTotal = txs
             .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem && t.quem.startsWith('Comum'))
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        // who paid common
         const p1CommonPaid = txs
             .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Comum - Eu')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -125,9 +125,6 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
         const p2CommonPaid = txs
             .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Comum - Outro')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
-
-        const totalCommonPaid = p1CommonPaid + p2CommonPaid;
-        const expectedShare = totalCommonPaid / 2;
 
         let debtMessage = '';
         let debtor = '';
@@ -158,114 +155,125 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
             commonTotal,
             p1CommonPaid,
             p2CommonPaid,
-            debtAmount,
-            debtor,
-            creditor,
             debtMessage,
+            debtAmount,
             p1Percent,
             p2Percent
         };
-    }, [transactions, partner1, partner2]);
-
-    const categoryData = useMemo(() => {
-        const txs = Array.isArray(transactions) ? transactions : [];
-        const map = {};
-        txs
-            .filter(t => t && (t.type === 'expense' || t.type === 'credit'))
-            .forEach(t => {
-                const cat = t.category || 'Outros';
-                map[cat] = (map[cat] || 0) + (t.amount || 0);
-            });
-        return Object.entries(map)
-            .map(([name, value]) => ({ name, value }))
-            .sort((a, b) => b.value - a.value);
-    }, [transactions]);
-
-    const projectionData = useMemo(() => {
-        const txs = Array.isArray(transactions) ? transactions : [];
-        const now = new Date();
-        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        const data = [];
-        let runningBalance = 0;
-
-        const sorted = [...txs].sort((a, b) => new Date(a.date) - new Date(b.date));
-        const byDay = {};
-        sorted.forEach(t => {
-            if (!t || !t.date) return;
-            const d = new Date(t.date);
-            if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
-                const day = d.getDate();
-                if (!byDay[day]) byDay[day] = 0;
-                byDay[day] += (t.type === 'income' ? (t.amount || 0) : -(t.amount || 0));
-            }
-        });
-
-        for (let i = 1; i <= daysInMonth; i++) {
-            runningBalance += (byDay[i] || 0);
-            data.push({ day: i, balance: runningBalance });
-        }
-
-        return data;
-    }, [transactions]);
-
-    const summaryCards = [
-        {
-            title: 'Saldo em Conta',
-            value: summary.balance,
-            icon: Wallet,
-            color: summary.balance >= 0 ? 'text-emerald-400' : 'text-red-400',
-            glow: summary.balance >= 0 ? 'glow-green' : 'glow-red',
-            bgIcon: summary.balance >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10',
-        },
-        {
-            title: 'Receitas',
-            value: summary.income,
-            icon: TrendingUp,
-            color: 'text-emerald-400',
-            glow: 'glow-green',
-            bgIcon: 'bg-emerald-500/10',
-        },
-        {
-            title: 'Despesas',
-            value: summary.expense,
-            icon: TrendingDown,
-            color: 'text-red-400',
-            glow: 'glow-red',
-            bgIcon: 'bg-red-500/10',
-        },
-        {
-            title: 'Fatura Cartões',
-            value: summary.creditTotal,
-            icon: CreditCard,
-            color: 'text-purple-400',
-            glow: 'glow-purple',
-            bgIcon: 'bg-purple-500/10',
-        },
-    ];
+    }, [txs, partner1, partner2]);
 
     return (
         <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {summaryCards.map((card, i) => {
-                    const Icon = card.icon;
-                    return (
-                        <Card key={card.title} className={`${card.glow} animate-fade-in stagger-${i + 1}`}>
-                            <CardContent className="p-5">
-                                <div className="flex items-center justify-between">
-                                    <div className="space-y-1">
-                                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{card.title}</p>
-                                        <p className={`text-2xl font-bold ${card.color}`}>{formatCurrency(card.value)}</p>
-                                    </div>
-                                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${card.bgIcon}`}>
-                                        <Icon className={`h-6 w-6 ${card.color}`} />
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    );
-                })}
+            {/* Hero: saldo atual + previsto do mês */}
+            <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-br from-[#1e293b] to-[#16213a] p-6 md:p-8 shadow-2xl animate-fade-in">
+                <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+                <div className="relative grid gap-8 md:grid-cols-2">
+                    <div className="space-y-1">
+                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Saldo Atual</p>
+                        <p className={`text-4xl md:text-5xl font-black tracking-tight ${financeSummary.saldoAtual >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {formatCurrency(financeSummary.saldoAtual)}
+                        </p>
+                        <p className="text-xs text-slate-500">Tudo que já entrou menos tudo que já saiu.</p>
+                    </div>
+                    <div className="space-y-1 md:border-l md:border-slate-800 md:pl-8">
+                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Previsto Fim do Mês</p>
+                        <p className={`text-4xl md:text-5xl font-black tracking-tight ${financeSummary.previsto >= 0 ? 'text-indigo-400' : 'text-red-400'}`}>
+                            {formatCurrency(financeSummary.previsto)}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                            Saldo atual + <span className="text-emerald-400 font-bold">{formatCurrency(financeSummary.pendingIncome)}</span> a receber
+                            {' '}- <span className="text-red-400 font-bold">{formatCurrency(financeSummary.pendingExpense)}</span> a pagar
+                        </p>
+                    </div>
+                </div>
+                <div className="relative mt-6 pt-4 border-t border-slate-800 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
+                    <span>
+                        Receitas do mês <strong className="text-emerald-400">+{formatCurrency(summary.income)}</strong>
+                    </span>
+                    <span>
+                        Despesas pagas no mês <strong className="text-red-400">-{formatCurrency(summary.income - summary.balance)}</strong>
+                    </span>
+                    <span>
+                        Fatura cartões <strong className="text-purple-400">{formatCurrency(summary.creditExpenses)}</strong>
+                    </span>
+                </div>
             </div>
-            
+
+            {/* Despesas com Vencimento */}
+            {(dueExpenses.totalVencidas > 0 || dueExpenses.totalProximas > 0) && (
+                <Card className="animate-fade-in border-amber-500/20 bg-amber-950/10 backdrop-blur-md">
+                    <CardContent className="p-6 space-y-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                            <div className="space-y-1">
+                                <h3 className="text-lg font-bold text-amber-400 flex items-center gap-2">
+                                    <CalendarClock className="h-5 w-5" /> Despesas com Vencimento
+                                </h3>
+                                <p className="text-xs text-slate-400">
+                                    {dueExpenses.totalVencidas > 0 && (
+                                        <span><span className="text-red-400 font-bold">{formatCurrency(dueExpenses.totalVencidas)}</span> vencidas</span>
+                                    )}
+                                    {dueExpenses.totalVencidas > 0 && dueExpenses.totalProximas > 0 && ' • '}
+                                    {dueExpenses.totalProximas > 0 && (
+                                        <span><span className="text-amber-400 font-bold">{formatCurrency(dueExpenses.totalProximas)}</span> a vencer em até 7 dias</span>
+                                    )}
+                                </p>
+                            </div>
+                            <span className="text-xs font-black uppercase text-slate-500">Total: {formatCurrency(dueExpenses.totalGeral)}</span>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-2xl border border-red-500/25 bg-red-500/5 p-4 space-y-2">
+                                <p className="text-[10px] font-black uppercase tracking-wider text-red-400 flex items-center gap-1.5">
+                                    <AlertCircle className="h-3.5 w-3.5" /> Vencidas ({dueExpenses.vencidas.length})
+                                </p>
+                                {dueExpenses.vencidas.length === 0 ? (
+                                    <p className="text-xs text-slate-500 py-2">Nenhuma despesa vencida. 🎉</p>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        {dueExpenses.vencidas.slice(0, 5).map((t) => (
+                                            <div key={t.id} className="flex items-center justify-between gap-3 bg-slate-900/40 rounded-lg px-3 py-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-medium text-slate-200 truncate">{t.description}</p>
+                                                    <p className="text-[10px] text-slate-500">{formatDate(t.date)} • {t._days} dia(s) de atraso</p>
+                                                </div>
+                                                <span className="text-xs font-bold text-red-400 shrink-0">{formatCurrency(t.amount)}</span>
+                                            </div>
+                                        ))}
+                                        {dueExpenses.vencidas.length > 5 && (
+                                            <p className="text-[10px] text-slate-500 text-center pt-1">+ {dueExpenses.vencidas.length - 5} outras vencidas</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4 space-y-2">
+                                <p className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                                    <CalendarDays className="h-3.5 w-3.5" /> Próximos 7 Dias ({dueExpenses.proximas.length})
+                                </p>
+                                {dueExpenses.proximas.length === 0 ? (
+                                    <p className="text-xs text-slate-500 py-2">Nada vence nos próximos 7 dias.</p>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        {dueExpenses.proximas.slice(0, 5).map((t) => (
+                                            <div key={t.id} className="flex items-center justify-between gap-3 bg-slate-900/40 rounded-lg px-3 py-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-medium text-slate-200 truncate">{t.description}</p>
+                                                    <p className="text-[10px] text-slate-500">{formatDate(t.date)} • em {t._days === 0 ? 'hoje' : `${t._days} dia(s)`}</p>
+                                                </div>
+                                                <span className="text-xs font-bold text-amber-400 shrink-0">{formatCurrency(t.amount)}</span>
+                                            </div>
+                                        ))}
+                                        {dueExpenses.proximas.length > 5 && (
+                                            <p className="text-[10px] text-slate-500 text-center pt-1">+ {dueExpenses.proximas.length - 5} outras</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Fixed Expenses Progress Card */}
             {summary.fixedTotal > 0 && (
                 <Card className="animate-fade-in border-blue-500/20 bg-blue-500/5">
@@ -273,20 +281,20 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
                         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                             <div className="space-y-2 text-center md:text-left">
                                 <h3 className="text-lg font-bold text-blue-400 flex items-center gap-2 justify-center md:justify-start">
-                                    📌 Compromissos Fixos do Mês
+                                    Compromissos Fixos do Mês
                                 </h3>
                                 <p className="text-sm text-slate-400">
                                     Você já pagou <span className="text-emerald-400 font-bold">{formatCurrency(summary.fixedPaid)}</span> de um total de <span className="text-slate-200 font-bold">{formatCurrency(summary.fixedTotal)}</span> em contas fixas.
                                 </p>
                             </div>
-                            
+
                             <div className="w-full md:w-1/3 space-y-2">
                                 <div className="flex justify-between text-xs font-bold uppercase tracking-wider">
                                     <span className="text-slate-500">Progresso de Pagamento</span>
                                     <span className="text-blue-400">{Math.round((summary.fixedPaid / summary.fixedTotal) * 100)}%</span>
                                 </div>
                                 <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-                                    <div 
+                                    <div
                                         className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all duration-1000 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
                                         style={{ width: `${(summary.fixedPaid / summary.fixedTotal) * 100}%` }}
                                     />
@@ -302,8 +310,8 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
                 <CardContent className="p-6 space-y-6">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
                         <div className="space-y-1">
-                            <h3 className="text-lg font-bold text-indigo-400 flex items-center gap-2">
-                                🏡 Painel do Casal ({partner1} & {partner2})
+                            <h3 className="text-lg font-bold text-indigo-400">
+                                Painel do Casal ({partner1} & {partner2})
                             </h3>
                             <p className="text-xs text-slate-400">
                                 Comparativo de gastos pessoais e acerto de despesas compartilhadas do mês.
@@ -311,11 +319,11 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
                         </div>
                         {coupleSummary.debtAmount > 0 ? (
                             <div className="flex items-center gap-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3.5 py-1.5 rounded-xl text-xs font-bold animate-pulse">
-                                <span>💵 {coupleSummary.debtMessage}</span>
+                                <span>{coupleSummary.debtMessage}</span>
                             </div>
                         ) : (
                             <div className="flex items-center gap-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-3.5 py-1.5 rounded-xl text-xs font-bold">
-                                <span>🎉 {coupleSummary.debtMessage}</span>
+                                <span>{coupleSummary.debtMessage}</span>
                             </div>
                         )}
                     </div>
@@ -341,7 +349,6 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
                         </div>
                     </div>
 
-                    {/* Comparison bar */}
                     {(coupleSummary.p1Personal > 0 || coupleSummary.p2Personal > 0) && (
                         <div className="space-y-2">
                             <div className="flex justify-between text-xs font-bold uppercase tracking-wider">
@@ -349,149 +356,17 @@ export default function Dashboard({ transactions = [], partner1 = 'Alle', partne
                                 <span className="text-rose-400">{partner2} ({Math.round(coupleSummary.p2Percent)}%)</span>
                             </div>
                             <div className="h-2.5 w-full bg-slate-900 rounded-full overflow-hidden flex border border-slate-800">
-                                <div 
+                                <div
                                     className="h-full bg-purple-500 transition-all duration-1000 shadow-[0_0_10px_rgba(168,85,247,0.4)]"
                                     style={{ width: `${coupleSummary.p1Percent}%` }}
                                 />
-                                <div 
+                                <div
                                     className="h-full bg-rose-500 transition-all duration-1000 shadow-[0_0_10px_rgba(244,63,94,0.4)]"
                                     style={{ width: `${coupleSummary.p2Percent}%` }}
                                 />
                             </div>
                         </div>
                     )}
-                </CardContent>
-            </Card>
-
-            {/* Charts Row */}
-            <div className="grid gap-6 lg:grid-cols-5">
-                {/* Projection Chart */}
-                <Card className="lg:col-span-3 animate-slide-up">
-                    <CardHeader>
-                        <CardTitle className="text-base">Projeção do Mês</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="h-[220px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={projectionData}>
-                                    <defs>
-                                        <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#818cf8" stopOpacity={0.4} />
-                                            <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <XAxis dataKey="day" fontSize={11} stroke="#555" tickLine={false} axisLine={false} />
-                                    <YAxis fontSize={11} stroke="#555" tickLine={false} axisLine={false} tickFormatter={(v) => `R$${v}`} />
-                                    <CartesianGrid strokeDasharray="3 3" stroke="hsla(228,12%,25%,0.3)" vertical={false} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Area type="monotone" dataKey="balance" stroke="#818cf8" strokeWidth={2} fillOpacity={1} fill="url(#colorBalance)" />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Category Pie Chart */}
-                <Card className="lg:col-span-2 animate-slide-up" style={{ animationDelay: '0.15s' }}>
-                    <CardHeader>
-                        <CardTitle className="text-base">Despesas por Categoria</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="h-[220px] w-full">
-                            {categoryData.length > 0 ? (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={categoryData}
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={50}
-                                            outerRadius={75}
-                                            dataKey="value"
-                                            strokeWidth={0}
-                                            paddingAngle={3}
-                                        >
-                                            {categoryData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip
-                                            contentStyle={{ borderRadius: '8px', border: 'none', background: 'hsl(228,15%,14%)', color: '#eee', fontSize: '12px' }}
-                                            formatter={(value) => [formatCurrency(value)]}
-                                        />
-                                        <Legend
-                                            wrapperStyle={{ fontSize: '11px', color: '#aaa' }}
-                                            iconType="circle"
-                                            iconSize={8}
-                                        />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                                    Nenhuma despesa registrada.
-                                </div>
-                            )}
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Discriminação das Despesas Card (Estilo App Exemplo) */}
-            <Card className="animate-slide-up border-slate-800 bg-[#1e293b]/60">
-                <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                        <CardTitle className="text-base flex items-center gap-2">
-                            📊 Discriminação das Despesas
-                        </CardTitle>
-                        <span className="text-xs font-bold text-slate-400">Total: {formatCurrency(summary.totalDespesasAll)}</span>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        {/* Efetivadas */}
-                        <div className="flex items-center justify-between p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-                            <div className="flex items-center gap-2.5">
-                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-black text-slate-950">
-                                    {summary.totalDespesasAll > 0 ? Math.round((summary.efetivadas / summary.totalDespesasAll) * 100) : 0}%
-                                </span>
-                                <span className="text-xs font-bold text-emerald-300">Efetivadas</span>
-                            </div>
-                            <span className="text-xs font-extrabold text-emerald-400">{formatCurrency(summary.efetivadas)}</span>
-                        </div>
-
-                        {/* Próximo do vencimento */}
-                        <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-                            <div className="flex items-center gap-2.5">
-                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-slate-950">
-                                    {summary.totalDespesasAll > 0 ? Math.round((summary.proximoVencimento / summary.totalDespesasAll) * 100) : 0}%
-                                </span>
-                                <span className="text-xs font-bold text-amber-300">Próximo ao Vencimento</span>
-                            </div>
-                            <span className="text-xs font-extrabold text-amber-400">{formatCurrency(summary.proximoVencimento)}</span>
-                        </div>
-
-                        {/* Vencidas */}
-                        <div className="flex items-center justify-between p-3 rounded-2xl bg-red-500/10 border border-red-500/20">
-                            <div className="flex items-center gap-2.5">
-                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs font-black text-white">
-                                    {summary.totalDespesasAll > 0 ? Math.round((summary.vencidas / summary.totalDespesasAll) * 100) : 0}%
-                                </span>
-                                <span className="text-xs font-bold text-red-300">Vencidas</span>
-                            </div>
-                            <span className="text-xs font-extrabold text-red-400">{formatCurrency(summary.vencidas)}</span>
-                        </div>
-
-                        {/* Distante do vencimento */}
-                        <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-800 border border-slate-700">
-                            <div className="flex items-center gap-2.5">
-                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-700 text-xs font-black text-slate-200">
-                                    {summary.totalDespesasAll > 0 ? Math.round((summary.distanteVencimento / summary.totalDespesasAll) * 100) : 0}%
-                                </span>
-                                <span className="text-xs font-bold text-slate-300">A Vencer (Futuras)</span>
-                            </div>
-                            <span className="text-xs font-extrabold text-slate-300">{formatCurrency(summary.distanteVencimento)}</span>
-                        </div>
-                    </div>
                 </CardContent>
             </Card>
         </div>
