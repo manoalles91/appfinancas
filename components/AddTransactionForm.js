@@ -24,6 +24,7 @@ const initialForm = () => ({
     cardName: '',
     pago: false,
     fixa: false,
+    fixaVariavel: false,
     payment_method: 'checking',
     quem: 'Comum',
     subcategoria: '',
@@ -103,6 +104,13 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                 }
                 toast(`Compra parcelada em ${formData.installments}x registrada!`);
             } else if (formData.fixa) {
+                try {
+                    const varSet = new Set(JSON.parse(localStorage.getItem('fincasal_fixas_variaveis') || '[]'));
+                    const nome = formData.description.trim();
+                    if (formData.fixaVariavel) varSet.add(nome);
+                    else varSet.delete(nome);
+                    localStorage.setItem('fincasal_fixas_variaveis', JSON.stringify([...varSet]));
+                } catch {}
                 await onAdd({
                     description: formData.description,
                     amount: baseAmount,
@@ -363,8 +371,19 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
 
                             {formData.fixa && (
                                 <div className="space-y-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 animate-fade-in">
+                                    <label className="flex items-center gap-2 text-xs text-blue-200/90 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.fixaVariavel}
+                                            onChange={(e) => setFormData({ ...formData, fixaVariavel: e.target.checked })}
+                                            className="h-4 w-4 accent-blue-500"
+                                        />
+                                        O valor muda todo mês (luz, água, internet...)
+                                    </label>
                                     <p className="text-[11px] text-blue-300/80">
-                                        Despesa fixa = mesmo valor todo mês. Ao pagar a do mês atual, a do próximo mês é gerada automaticamente.
+                                        {formData.fixaVariavel
+                                            ? 'A conta é criada todo mês automaticamente; ao pagar, você digita o valor real do boleto. Sem login em nenhum site.'
+                                            : 'Despesa fixa = mesmo valor todo mês. Ao pagar a do mês atual, a do próximo mês é gerada automaticamente.'}
                                     </p>
                                 </div>
                             )}

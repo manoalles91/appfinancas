@@ -10,7 +10,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import CSVManager from '@/components/CSVManager';
 import CategoriesEditor from '@/components/CategoriesEditor';
 import { useToast } from '@/components/ui/toast';
-import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal } from 'lucide-react';
+import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getCategories, getGroupId } from '@/lib/categories';
 import { Card, CardContent } from '@/components/ui/card';
@@ -48,6 +48,16 @@ export default function Home() {
 
   const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
   const [selectedCardFilter, setSelectedCardFilter] = useState(null);
+  const [expandedPurchases, setExpandedPurchases] = useState(null);
+
+  const variaveis = useMemo(() => {
+    void transactions;
+    try {
+      return JSON.parse(localStorage.getItem('fincasal_fixas_variaveis')) || [];
+    } catch {
+      return [];
+    }
+  }, [transactions]);
 
   // States para confirmação de exclusão e reset
   const [txToDelete, setTxToDelete] = useState(null);
@@ -173,6 +183,7 @@ export default function Home() {
         isAjustada,
         isPaga,
         totalItems: matches.length,
+        purchases: matches,
         disponivel: limite - faturaAtual,
         percentual: limite > 0 ? (faturaAtual / limite) * 100 : 0
       };
@@ -748,6 +759,7 @@ export default function Home() {
                 onEdit={openEditTransaction}
                 onTogglePaid={handleTogglePaid}
                 onAdjustAmount={handleAdjustAmount}
+                onPayInvoice={handlePayInvoice}
                 statusFilter={transactionStatusFilter}
                 onStatusFilterChange={setTransactionStatusFilter}
                 partner1={partner1}
@@ -755,6 +767,7 @@ export default function Home() {
                 selectedCardFilter={selectedCardFilter}
                 onClearCardFilter={() => setSelectedCardFilter(null)}
                 viewDate={viewDate}
+                variaveis={variaveis}
               />
             </div>
           </div>
@@ -861,6 +874,36 @@ export default function Home() {
                           <p className="text-xl font-black text-white">R$ {card.faturaAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                         </div>
                       </div>
+
+                      <button
+                        onClick={() => setExpandedPurchases(expandedPurchases === card.nome ? null : card.nome)}
+                        className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] font-black rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-300 ${expandedPurchases === card.nome ? 'rotate-180' : ''}`} />
+                        {expandedPurchases === card.nome ? 'OCULTAR COMPRAS' : `VER COMPRAS (${card.totalItems})`}
+                      </button>
+                      {expandedPurchases === card.nome && (
+                        <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                          {card.purchases.length === 0 ? (
+                            <p className="text-[11px] text-slate-500 text-center py-3">Nenhuma compra neste mês.</p>
+                          ) : (
+                            card.purchases.map((p) => (
+                              <div key={p.id} className="flex items-center justify-between text-[11px] rounded-lg bg-slate-900/60 px-2.5 py-1.5 border border-slate-800/60">
+                                <div className="min-w-0">
+                                  <p className="truncate text-slate-200 font-medium">{p.description}</p>
+                                  <p className="text-[9px] text-slate-500">
+                                    {p.installment_info ? `${p.installment_info} • ` : ''}
+                                    {new Date(p.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                  </p>
+                                </div>
+                                <span className={`text-xs font-bold shrink-0 ml-2 ${p.pago ? 'text-emerald-400' : 'text-purple-300'}`}>
+                                  R$ {Number(p.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}{p.pago ? ' ✓' : ''}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
 
                       <div className="flex flex-col gap-2">
                         <div className="flex gap-2">

@@ -17,7 +17,9 @@ export default function TransactionList({
     partner2 = 'Kelly',
     selectedCardFilter,
     onClearCardFilter,
-    viewDate
+    viewDate,
+    onPayInvoice,
+    variaveis = []
 }) {
     const [filter, setFilter] = useState('all'); // all | income | expense | credit
     const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum
@@ -62,6 +64,34 @@ export default function TransactionList({
     const pendingList = useMemo(() => filteredTransactions.filter(t => !t.pago), [filteredTransactions]);
     const paidList = useMemo(() => filteredTransactions.filter(t => t.pago), [filteredTransactions]);
 
+    const isVariavel = (t) => t && t.fixa && Array.isArray(variaveis) && variaveis.includes(t.description);
+
+    const consolidateCards = (list) => {
+        const cards = {};
+        const rest = [];
+        list.forEach(t => {
+            if (t && t.type === 'credit' && t.card_name) {
+                (cards[t.card_name] = cards[t.card_name] || []).push(t);
+            } else {
+                rest.push(t);
+            }
+        });
+        return [
+            ...rest,
+            ...Object.entries(cards).map(([cardName, items]) => ({
+                __cardRow: true,
+                id: 'card|' + cardName,
+                card_name: cardName,
+                items,
+                amount: items.reduce((a, t) => a + Number(t.amount || 0), 0),
+                allPaid: items.every(t => t.pago),
+            })),
+        ];
+    };
+
+    const pendingDisplay = useMemo(() => consolidateCards(pendingList), [pendingList]);
+    const paidDisplay = useMemo(() => consolidateCards(paidList), [paidList]);
+
     const sum = (list) => list.reduce((acc, t) => acc + (t.amount || 0), 0);
     const pendingTotal = sum(pendingList);
     const paidTotal = sum(paidList);
@@ -71,8 +101,8 @@ export default function TransactionList({
     const showPending = statusFilter === 'all' || statusFilter === 'pending';
     const showPaid = statusFilter === 'all' || statusFilter === 'paid';
 
-    const displayedPending = showAllPending ? pendingList : pendingList.slice(0, 15);
-    const displayedPaid = showAllPaid ? paidList : paidList.slice(0, 15);
+    const displayedPending = showAllPending ? pendingDisplay : pendingDisplay.slice(0, 15);
+    const displayedPaid = showAllPaid ? paidDisplay : paidDisplay.slice(0, 15);
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
@@ -131,6 +161,41 @@ export default function TransactionList({
     };
 
     const renderItem = (t) => {
+        if (t.__cardRow) {
+            return (
+                <div key={t.id} className="group flex items-center justify-between rounded-lg p-3 border border-purple-500/25 bg-purple-500/10 transition-all duration-200">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <button
+                            onClick={() => onPayInvoice && onPayInvoice(t.card_name, !t.allPaid)}
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all cursor-pointer hover:scale-110 ${
+                                t.allPaid ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-amber-500/10 hover:bg-amber-500/30'
+                            }`}
+                            title={t.allPaid ? 'Reabrir fatura' : 'Pagar fatura inteira'}
+                        >
+                            {t.allPaid ? (
+                                <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+                            ) : (
+                                <Clock className="h-6 w-6 text-amber-500" />
+                            )}
+                        </button>
+                        <div className="min-w-0">
+                            <p className="text-sm font-bold text-purple-300 truncate flex items-center gap-1.5">
+                                <CreditCard className="h-3.5 w-3.5" /> Fatura {t.card_name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                {t.items.length} {t.items.length === 1 ? 'compra' : 'compras'} no mês
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <span className={`text-sm font-semibold ${t.allPaid ? 'text-slate-400' : 'text-purple-400'}`}>
+                            -{formatCurrency(t.amount)}
+                        </span>
+                    </div>
+                </div>
+            );
+        }
+
         const config = typeConfig[t.type] || typeConfig.expense;
         const isPaid = t.pago;
         const overdue = isOverdue(t);
@@ -144,10 +209,10 @@ export default function TransactionList({
             >
                 <div className="flex items-center gap-3 min-w-0">
                     <button 
-                        onClick={() => {
-                            if (!isPaid && t.installment_info && onAdjustAmount) {
+onClick={() => {
+                            if (!isPaid && (t.installment_info || isVariavel(t)) && onAdjustAmount) {
                                 setAdjustFor(t);
-                                setAdjustValue(String(Number(t.amount || 0).toFixed(2)).replace('.', ','));
+                                setAdjustValue(String(Number(t.amount || 0).toFixed(2)).replace(',', '.'));
                             } else {
                                 onTogglePaid && onTogglePaid(t.id, !isPaid);
                             }
@@ -155,7 +220,7 @@ export default function TransactionList({
                         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all cursor-pointer hover:scale-110 ${
                             isPaid ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-amber-500/10 hover:bg-amber-500/30'
                         }`}
-                        title={isPaid ? "Marcar como pendente" : (t.installment_info ? "Pagar (ajusta o valor real do boleto)" : "Marcar como PAGO ✓")}
+                        title={isPaid ? "Marcar como pendente" : ((t.installment_info || isVariavel(t)) ? "Pagar (digite o valor real)" : "Marcar como PAGO ✓")}
                     >
                         {isPaid ? (
                             <CheckCircle2 className="h-6 w-6 text-emerald-500" />
@@ -182,6 +247,14 @@ export default function TransactionList({
                                     <span className="text-muted-foreground/40">•</span>
                                     <span className="flex items-center gap-0.5 text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1 rounded">
                                         <Lock className="h-2.5 w-2.5" /> FIXA
+                                    </span>
+                                </>
+                            )}
+                            {isVariavel(t) && (
+                                <>
+                                    <span className="text-muted-foreground/40">•</span>
+                                    <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1 rounded">
+                                        <Clock className="h-2.5 w-2.5" /> VARIÁVEL
                                     </span>
                                 </>
                             )}
@@ -386,7 +459,9 @@ export default function TransactionList({
                             <div className="min-w-0">
                                 <p className="text-sm font-bold text-white truncate">{adjustFor.description}</p>
                                 <p className="text-[10px] text-amber-300/70">
-                                    Parcela ({adjustFor.installment_info}) • pode haver diferença de centavos por TR/seguros
+                                    {adjustFor.installment_info
+                                        ? `Parcela (${adjustFor.installment_info}) • pode haver diferença de centavos por TR/seguros`
+                                        : 'Conta variável • digite o valor real do boleto (luz, água, etc.)'}
                                 </p>
                             </div>
                             <button
@@ -425,9 +500,9 @@ export default function TransactionList({
                     </div>
                 )}
                 <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
-                    {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingList.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300', false)}
-                    {showPaid && renderSection('Pagas', '✅', displayedPaid, paidTotal, paidList.length, showAllPaid, setShowAllPaid, 'text-emerald-400', 'text-emerald-300', false)}
-                    {pendingList.length === 0 && paidList.length === 0 && (
+                    {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingDisplay.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300', false)}
+                    {showPaid && renderSection('Pagas', '✅', displayedPaid, paidTotal, paidDisplay.length, showAllPaid, setShowAllPaid, 'text-emerald-400', 'text-emerald-300', false)}
+                    {pendingDisplay.length === 0 && paidDisplay.length === 0 && (
                         <p className="text-center text-muted-foreground text-sm py-8">Nenhuma transação encontrada.</p>
                     )}
                 </div>
