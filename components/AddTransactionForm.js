@@ -23,7 +23,8 @@ const initialForm = () => ({
     installments: 1,
     cardName: '',
     pago: false,
-    fixa: false,
+    formato: 'unica',
+    parcelasN: 2,
     fixaVariavel: false,
     payment_method: 'checking',
     quem: 'Comum',
@@ -79,31 +80,41 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
         }
 
         try {
-            if (formData.type === 'credit' && formData.installments > 1) {
-                const installmentAmount = Math.round((baseAmount / formData.installments) * 100) / 100;
+            const formato = formData.type === 'income'
+                ? 'unica'
+                : (formData.formato === 'fixa' ? 'fixa' : formData.formato === 'parcelada' ? 'parcelada' : 'unica');
+            const parcTotal = parseInt(formData.parcelasN, 10) || 0;
+            const creditParc = formData.type === 'credit' && (parseInt(formData.installments, 10) || 1) > 1;
+            const totalParc = formato === 'parcelada' && parcTotal > 1
+                ? parcTotal
+                : (creditParc ? parseInt(formData.installments, 10) : 0);
+
+            if (totalParc > 1) {
+                const installmentAmount = Math.round((baseAmount / totalParc) * 100) / 100;
+                const lastAmount = Math.round((baseAmount - installmentAmount * (totalParc - 1)) * 100) / 100;
                 const baseDate = new Date(formData.date);
 
-                for (let i = 0; i < formData.installments; i++) {
+                for (let i = 0; i < totalParc; i++) {
                     const installDate = new Date(baseDate);
                     installDate.setMonth(installDate.getMonth() + i);
 
                     await onAdd({
-                        description: `${formData.description} (${i + 1}/${formData.installments})`,
-                        amount: installmentAmount,
-                        type: 'credit',
-                        category: formData.category || 'Cartão',
+                        description: formData.description,
+                        amount: i === totalParc - 1 ? lastAmount : installmentAmount,
+                        type: formData.type,
+                        category: formData.category || (formData.type === 'credit' ? 'Cartão' : 'Compras'),
                         date: installDate.toISOString(),
-                        cardName: formData.cardName,
-                        installmentInfo: `${i + 1}/${formData.installments}`,
-                        pago: formData.pago,
-                        payment_method: 'credit',
+                        cardName: formData.type === 'credit' ? formData.cardName : undefined,
+                        installmentInfo: `${i + 1}/${totalParc}`,
+                        pago: i === 0 ? formData.pago : false,
+                        payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
                         quem: finalQuem,
                         subcategoria: formData.subcategoria,
                         destino: formData.destino,
                     });
                 }
-                toast(`Compra parcelada em ${formData.installments}x registrada!`);
-            } else if (formData.fixa) {
+                toast(`Despesa parcelada em ${totalParc}x registrada!`);
+            } else if (formato === 'fixa') {
                 try {
                     const varSet = new Set(JSON.parse(localStorage.getItem('fincasal_fixas_variaveis') || '[]'));
                     const nome = formData.description.trim();
@@ -337,39 +348,67 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                                 </div>
                             )}
 
-                            {/* Status & Fixa row */}
-                            <div className="grid grid-cols-2 gap-3">
+                            {/* Formato: Única / Fixa / Parcelada */}
+                            {formData.type !== 'income' && (
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, pago: !formData.pago })}
-                                        className={`w-full flex items-center justify-center gap-2 h-[38px] rounded-lg border font-bold text-xs transition-all cursor-pointer ${
-                                            formData.pago
-                                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                                            : 'bg-amber-500/20 text-amber-400 border-amber-500/40 hover:bg-amber-500/30'
-                                        }`}
-                                    >
-                                        {formData.pago ? 'PAGO' : 'PENDENTE'}
-                                    </button>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Formato da despesa</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {[
+                                            { value: 'unica', label: 'Única' },
+                                            { value: 'fixa', label: 'Fixa' },
+                                            { value: 'parcelada', label: 'Parcelada' },
+                                        ].map((opt) => (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                onClick={() => setFormData({ ...formData, formato: opt.value })}
+                                                className={`py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                                                    formData.formato === opt.value
+                                                    ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                                                    : 'bg-secondary/30 text-slate-500 border-slate-800 hover:text-slate-300'
+                                                }`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {formData.formato === 'parcelada' && (
+                                        <div className="space-y-1.5 animate-fade-in">
+                                            <label className="text-xs font-medium text-blue-300 uppercase tracking-wide">Número de parcelas</label>
+                                            <Input
+                                                type="number"
+                                                min="2"
+                                                max="48"
+                                                value={formData.parcelasN}
+                                                onChange={(e) => setFormData({ ...formData, parcelasN: e.target.value })}
+                                            />
+                                            {formData.amount && (
+                                                <p className="text-xs text-blue-300/70">
+                                                    {formData.parcelasN}x de {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(formData.amount) / (parseInt(formData.parcelasN, 10) || 1))}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Fixa / Parcelas?</label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, fixa: !formData.fixa })}
-                                        className={`w-full flex items-center justify-center gap-2 h-[38px] rounded-lg border font-bold text-xs transition-all cursor-pointer ${
-                                            formData.fixa
-                                            ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
-                                            : 'bg-secondary/30 text-slate-500 border-slate-800 hover:text-slate-300'
-                                        }`}
-                                    >
-                                        {formData.fixa ? 'SIM' : 'NÃO'}
-                                    </button>
-                                </div>
+                            )}
+
+                            {/* Status */}
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, pago: !formData.pago })}
+                                    className={`w-full flex items-center justify-center gap-2 h-[38px] rounded-lg border font-bold text-xs transition-all cursor-pointer ${
+                                        formData.pago
+                                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                                        : 'bg-amber-500/20 text-amber-400 border-amber-500/40 hover:bg-amber-500/30'
+                                    }`}
+                                >
+                                    {formData.pago ? 'PAGO' : 'PENDENTE'}
+                                </button>
                             </div>
 
-                            {formData.fixa && (
+                            {formData.formato === 'fixa' && (
                                 <div className="space-y-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 animate-fade-in">
                                     <label className="flex items-center gap-2 text-xs text-blue-200/90 cursor-pointer select-none">
                                         <input
@@ -449,21 +488,6 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                                             value={formData.cardName}
                                             onChange={(e) => setFormData({ ...formData, cardName: e.target.value })}
                                         />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-purple-300 uppercase tracking-wide">Parcelas</label>
-                                        <Input
-                                            type="number"
-                                            min="1"
-                                            max="48"
-                                            value={formData.installments}
-                                            onChange={(e) => setFormData({ ...formData, installments: parseInt(e.target.value) || 1 })}
-                                        />
-                                        {formData.installments > 1 && formData.amount && (
-                                            <p className="text-xs text-purple-300/70">
-                                                {formData.installments}x de {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(formData.amount) / formData.installments)}
-                                            </p>
-                                        )}
                                     </div>
                                 </div>
                             )}
