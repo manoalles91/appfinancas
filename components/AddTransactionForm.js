@@ -80,9 +80,9 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
         }
 
         try {
-            const formato = formData.type === 'income'
-                ? 'unica'
-                : (formData.formato === 'fixa' ? 'fixa' : formData.formato === 'parcelada' ? 'parcelada' : 'unica');
+            const formato = formData.formato === 'fixa'
+                ? 'fixa'
+                : formData.formato === 'parcelada' ? 'parcelada' : 'unica';
             const parcTotal = parseInt(formData.parcelasN, 10) || 0;
             const creditParc = formData.type === 'credit' && (parseInt(formData.installments, 10) || 1) > 1;
             const totalParc = formato === 'parcelada' && parcTotal > 1
@@ -107,7 +107,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                         description: formData.description,
                         amount: i === totalParc - 1 ? lastAmount : installmentAmount,
                         type: formData.type,
-                        category: formData.category || (formData.type === 'credit' ? 'Cartão' : 'Compras'),
+                        category: formData.category || (formData.type === 'income' ? 'Salário' : formData.type === 'credit' ? 'Cartão' : 'Compras'),
                         date: installDate.toISOString(),
                         cardName: formData.type === 'credit' ? formData.cardName : undefined,
                         installmentInfo: `${i + 1}/${totalParc}`,
@@ -118,7 +118,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                         destino: formData.destino,
                     });
                 }
-                toast(`Despesa parcelada em ${totalParc}x registrada!`);
+                toast(`${formData.type === 'income' ? 'Receita' : 'Despesa'} parcelada em ${totalParc}x registrada!`);
             } else if (formato === 'fixa') {
                 const baseDate = new Date(formData.date + 'T12:00:00');
                 const payloads = [];
@@ -131,7 +131,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                         description: formData.description,
                         amount: baseAmount,
                         type: formData.type,
-                        category: formData.category || 'Fixa',
+                        category: formData.category || (formData.type === 'income' ? 'Salário' : 'Fixa'),
                         date: recDate.toISOString(),
                         fixa: true,
                         pago: i === 0 ? formData.pago : false,
@@ -141,7 +141,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                         destino: formData.destino,
                     });
                 }
-                await onAddMany(payloads, 'Despesa fixa criada para os próximos 24 meses!');
+                await onAddMany(payloads, `${formData.type === 'income' ? 'Entrada' : 'Despesa'} fixa criada para os próximos 24 meses!`);
             } else {
                 await onAdd({
                     description: formData.description,
@@ -355,9 +355,10 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                             )}
 
                             {/* Formato: Única / Fixa / Parcelada */}
-                            {formData.type !== 'income' && (
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Formato da despesa</label>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    Formato da {formData.type === 'income' ? 'entrada' : 'despesa'}
+                                </label>
                                     <div className="grid grid-cols-3 gap-2">
                                         {[
                                             { value: 'unica', label: 'Única' },
@@ -417,7 +418,6 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                                         </div>
                                     )}
                                 </div>
-                            )}
 
                             {/* Status */}
                             <div className="space-y-1.5">
