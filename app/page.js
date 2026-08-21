@@ -798,6 +798,7 @@ export default function Home() {
               partner2={partner2}
               onAddMany={handleBulkAdd}
               onDeleteByIds={handleDeleteByIds}
+              viewDate={viewDate}
             />
           </div>
         )}

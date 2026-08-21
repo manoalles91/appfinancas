@@ -20,7 +20,7 @@ const formatDate = (dateString) => {
     });
 };
 
-export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly', onAddMany, onDeleteByIds }) {
+export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly', onAddMany, onDeleteByIds, viewDate }) {
     const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
     const allTxs = useMemo(() => (Array.isArray(allTransactions) ? allTransactions : []), [allTransactions]);
 
@@ -59,13 +59,20 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
 
     const financeSummary = useMemo(() => {
         const now = new Date();
+        const v = viewDate ? new Date(viewDate) : new Date();
+        const startM = now.getFullYear() * 12 + now.getMonth();
+        const endM = v.getFullYear() * 12 + v.getMonth();
+        const fromM = Math.min(startM, endM);
+        const toM = Math.max(startM, endM);
         let pendingIncome = 0;
         let pendingExpense = 0;
 
         allTxs.forEach((t) => {
             if (!t || !t.date) return;
             const d = new Date(t.date);
-            if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return;
+            if (isNaN(d.getTime())) return;
+            const m = d.getFullYear() * 12 + d.getMonth();
+            if (m < fromM || m > toM) return;
             const amt = Number(t.amount || 0);
             if (t.type === 'income') {
                 if (!t.pago) pendingIncome += amt;
@@ -80,7 +87,7 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
             pendingIncome,
             pendingExpense,
         };
-    }, [allTxs, manualSaldo]);
+    }, [allTxs, manualSaldo, viewDate]);
 
     const dueExpenses = useMemo(() => {
         const today = new Date();
@@ -187,7 +194,9 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
                             <p className="text-xs text-slate-500">Saldo {partner1} + Saldo {partner2} (editável acima).</p>
                         </div>
                         <div className="space-y-1 md:border-l md:border-slate-800 md:pl-8">
-                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Previsto Fim do Mês</p>
+                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                Previsto Fim de {(viewDate ? new Date(viewDate) : new Date()).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                            </p>
                             <p className={`text-4xl md:text-5xl font-black tracking-tight ${financeSummary.previsto >= 0 ? 'text-indigo-400' : 'text-red-400'}`}>
                                 {formatCurrency(financeSummary.previsto)}
                             </p>
