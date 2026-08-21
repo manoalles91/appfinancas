@@ -248,6 +248,71 @@ export default function Home() {
     }
   }, [fetchData, toast]);
 
+  const FIXAS_HORIZON_MONTHS = 24;
+
+  const backfillFixas = useCallback(async () => {
+    try {
+      const fixas = transactions.filter(t => t && t.fixa && !t.installment_info);
+      if (fixas.length === 0) return;
+      const now = new Date();
+      const horizon = now.getFullYear() * 12 + now.getMonth() + FIXAS_HORIZON_MONTHS;
+      const groups = {};
+      const takenMonths = {};
+      for (const f of fixas) {
+        const d = new Date((f.date || '').slice(0, 10) + 'T12:00:00');
+        if (isNaN(d.getTime())) continue;
+        const key = f.description;
+        (groups[key] = groups[key] || []).push(f);
+        (takenMonths[key] = takenMonths[key] || new Set()).add(d.getFullYear() * 12 + d.getMonth());
+      }
+      const inserts = [];
+      for (const [key, rows] of Object.entries(groups)) {
+        let lastM = -Infinity;
+        let ref = null;
+        let refRow = null;
+        for (const r of rows) {
+          const d = new Date((r.date || '').slice(0, 10) + 'T12:00:00');
+          if (isNaN(d.getTime())) continue;
+          const m = d.getFullYear() * 12 + d.getMonth();
+          if (m > lastM) { lastM = m; ref = d; refRow = r; }
+        }
+        if (!ref) continue;
+        const taken = takenMonths[key];
+        for (let m = lastM + 1; m <= horizon; m++) {
+          if (taken.has(m)) continue;
+          const y = Math.floor(m / 12);
+          const mo = m % 12;
+          const lastDay = new Date(y, mo + 1, 0).getDate();
+          inserts.push({
+            description: refRow.description,
+            amount: refRow.amount,
+            type: refRow.type,
+            category: refRow.category,
+            date: new Date(y, mo, Math.min(ref.getDate(), lastDay)).toISOString(),
+            fixa: true,
+            pago: false,
+            payment_method: refRow.payment_method || 'checking',
+            quem: refRow.quem || 'Comum',
+            subcategoria: refRow.subcategoria || '',
+            destino: refRow.destino || '',
+            card_name: refRow.type === 'credit' ? refRow.card_name || null : null,
+          });
+        }
+      }
+      if (inserts.length === 0) return;
+      const CHUNK = 500;
+      for (let i = 0; i < inserts.length; i += CHUNK) {
+        const { data, error } = await supabase.from('transactions').insert(inserts.slice(i, i + CHUNK)).select();
+        if (error) throw error;
+        if (data && data.length) setTransactions(prev => [...data, ...prev]);
+      }
+    } catch (error) {
+      console.error('Error backfilling fixas:', error.message);
+    }
+  }, [transactions]);
+
+  useEffect(() => { backfillFixas(); }, [backfillFixas]);
+
   const handleImportTransactions = useCallback(async (items) => {
     await handleBulkAdd(items, `${items.length} transações importadas com sucesso!`);
   }, [handleBulkAdd]);

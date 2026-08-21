@@ -25,7 +25,7 @@ const initialForm = () => ({
     pago: false,
     formato: 'unica',
     parcelasN: 2,
-    fixaVariavel: false,
+    valorTipo: 'total',
     payment_method: 'checking',
     quem: 'Comum',
     subcategoria: '',
@@ -90,8 +90,13 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                 : (creditParc ? parseInt(formData.installments, 10) : 0);
 
             if (totalParc > 1) {
-                const installmentAmount = Math.round((baseAmount / totalParc) * 100) / 100;
-                const lastAmount = Math.round((baseAmount - installmentAmount * (totalParc - 1)) * 100) / 100;
+                const valorParcela = formData.valorTipo === 'parcela';
+                const installmentAmount = valorParcela
+                    ? baseAmount
+                    : Math.round((baseAmount / totalParc) * 100) / 100;
+                const lastAmount = valorParcela
+                    ? baseAmount
+                    : Math.round((baseAmount - installmentAmount * (totalParc - 1)) * 100) / 100;
                 const baseDate = new Date(formData.date);
 
                 for (let i = 0; i < totalParc; i++) {
@@ -115,27 +120,28 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                 }
                 toast(`Despesa parcelada em ${totalParc}x registrada!`);
             } else if (formato === 'fixa') {
-                try {
-                    const varSet = new Set(JSON.parse(localStorage.getItem('fincasal_fixas_variaveis') || '[]'));
-                    const nome = formData.description.trim();
-                    if (formData.fixaVariavel) varSet.add(nome);
-                    else varSet.delete(nome);
-                    localStorage.setItem('fincasal_fixas_variaveis', JSON.stringify([...varSet]));
-                } catch {}
-                await onAdd({
-                    description: formData.description,
-                    amount: baseAmount,
-                    type: formData.type,
-                    category: formData.category || 'Fixa',
-                    date: new Date(formData.date).toISOString(),
-                    fixa: true,
-                    pago: formData.pago,
-                    payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
-                    quem: finalQuem,
-                    subcategoria: formData.subcategoria,
-                    destino: formData.destino,
-                });
-                toast('Despesa fixa criada! Ao pagar, a do próximo mês é gerada automaticamente.');
+                const baseDate = new Date(formData.date + 'T12:00:00');
+                const payloads = [];
+                for (let i = 0; i < 24; i++) {
+                    const year = baseDate.getFullYear();
+                    const month = baseDate.getMonth() + i;
+                    const lastDay = new Date(year, month + 1, 0).getDate();
+                    const recDate = new Date(year, month, Math.min(baseDate.getDate(), lastDay));
+                    payloads.push({
+                        description: formData.description,
+                        amount: baseAmount,
+                        type: formData.type,
+                        category: formData.category || 'Fixa',
+                        date: recDate.toISOString(),
+                        fixa: true,
+                        pago: i === 0 ? formData.pago : false,
+                        payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
+                        quem: finalQuem,
+                        subcategoria: formData.subcategoria,
+                        destino: formData.destino,
+                    });
+                }
+                await onAddMany(payloads, 'Despesa fixa criada para os próximos 24 meses!');
             } else {
                 await onAdd({
                     description: formData.description,
@@ -382,9 +388,30 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                                                 value={formData.parcelasN}
                                                 onChange={(e) => setFormData({ ...formData, parcelasN: e.target.value })}
                                             />
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {[
+                                                    { value: 'total', label: '💰 Valor total (divide em N)' },
+                                                    { value: 'parcela', label: '📆 Valor da parcela (cada uma)' },
+                                                ].map((opt) => (
+                                                    <button
+                                                        key={opt.value}
+                                                        type="button"
+                                                        onClick={() => setFormData({ ...formData, valorTipo: opt.value })}
+                                                        className={`py-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                                                            formData.valorTipo === opt.value
+                                                            ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                                                            : 'bg-secondary/30 text-slate-500 border-slate-800 hover:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        {opt.label}
+                                                    </button>
+                                                ))}
+                                            </div>
                                             {formData.amount && (
                                                 <p className="text-xs text-blue-300/70">
-                                                    {formData.parcelasN}x de {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(formData.amount) / (parseInt(formData.parcelasN, 10) || 1))}
+                                                    {formData.valorTipo === 'parcela'
+                                                        ? `Cada uma das ${formData.parcelasN || 'N'} parcelas terá esse valor (total de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((parseFloat(formData.amount) || 0) * (parseInt(formData.parcelasN, 10) || 1))}).`
+                                                        : `Ao salvar, o valor total é dividido em ${formData.parcelasN || 'N'} parcelas mensais de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((parseFloat(formData.amount) || 0) / (parseInt(formData.parcelasN, 10) || 1))} (a última recebe a diferença de centavos).`}
                                                 </p>
                                             )}
                                         </div>
@@ -407,25 +434,6 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                                     {formData.pago ? 'PAGO' : 'PENDENTE'}
                                 </button>
                             </div>
-
-                            {formData.formato === 'fixa' && (
-                                <div className="space-y-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 animate-fade-in">
-                                    <label className="flex items-center gap-2 text-xs text-blue-200/90 cursor-pointer select-none">
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.fixaVariavel}
-                                            onChange={(e) => setFormData({ ...formData, fixaVariavel: e.target.checked })}
-                                            className="h-4 w-4 accent-blue-500"
-                                        />
-                                        O valor muda todo mês (luz, água, internet...)
-                                    </label>
-                                    <p className="text-[11px] text-blue-300/80">
-                                        {formData.fixaVariavel
-                                            ? 'A conta é criada todo mês automaticamente; ao pagar, você digita o valor real do boleto. Sem login em nenhum site.'
-                                            : 'Despesa fixa = mesmo valor todo mês. Ao pagar a do mês atual, a do próximo mês é gerada automaticamente.'}
-                                    </p>
-                                </div>
-                            )}
 
                             {/* De quem é? (Responsável) */}
                             <div className="space-y-1.5">
