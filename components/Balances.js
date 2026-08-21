@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Pencil, Check } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+
+const SALDO_KEYS = { alle: 'saldo_alle', kelly: 'saldo_kelly' };
 
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -21,6 +24,19 @@ export default function Balances({ partner1 = 'Alle', partner2 = 'Kelly', onChan
         const k = localStorage.getItem('fincasal_saldo_kelly');
         setAlle(a === null ? 0 : parseFloat(a) || 0);
         setKelly(k === null ? 0 : parseFloat(k) || 0);
+
+        let active = true;
+        (async () => {
+            try {
+                const { data, error } = await supabase.from('app_settings').select('key,value');
+                if (error || !data || !active) return;
+                for (const row of data) {
+                    if (row.key === SALDO_KEYS.alle) setAlle(parseFloat(row.value) || 0);
+                    if (row.key === SALDO_KEYS.kelly) setKelly(parseFloat(row.value) || 0);
+                }
+            } catch {}
+        })();
+        return () => { active = false; };
     }, []);
 
     useEffect(() => {
@@ -33,14 +49,26 @@ export default function Balances({ partner1 = 'Alle', partner2 = 'Kelly', onChan
         setDraft(String(current).replace('.', ','));
     };
 
+    const persist = async (who, val) => {
+        localStorage.setItem(who === 'alle' ? 'fincasal_saldo_alle' : 'fincasal_saldo_kelly', val);
+        try {
+            const { error } = await supabase
+                .from('app_settings')
+                .upsert({ key: SALDO_KEYS[who], value: String(val) }, { onConflict: 'key' });
+            if (error) console.error('Error saving saldo:', error.message);
+        } catch (err) {
+            console.error('Error saving saldo:', err.message);
+        }
+    };
+
     const save = () => {
         const val = parseFloat(String(draft).replace(',', '.')) || 0;
         if (editing === 'alle') {
             setAlle(val);
-            localStorage.setItem('fincasal_saldo_alle', val);
+            persist('alle', val);
         } else if (editing === 'kelly') {
             setKelly(val);
-            localStorage.setItem('fincasal_saldo_kelly', val);
+            persist('kelly', val);
         }
         setEditing(null);
     };
