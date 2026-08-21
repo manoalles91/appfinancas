@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/toast';
 import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getCategories, getGroupId } from '@/lib/categories';
+import { loadCloudSettings, saveCloudSetting } from '@/lib/cloudSettings';
 import { Card, CardContent } from '@/components/ui/card';
 
 const TABS = [
@@ -105,7 +106,7 @@ export default function Home() {
     });
   };
 
-  // Carrega nomes do localStorage (padrão Kelly se não definido)
+  // Carrega nomes do localStorage (padrão Kelly se não definido) e sincroniza com a nuvem
   useEffect(() => {
     const p1 = localStorage.getItem('fincasal_partner1');
     const p2 = localStorage.getItem('fincasal_partner2');
@@ -115,6 +116,18 @@ export default function Home() {
       setPartner2('Kelly');
       localStorage.setItem('fincasal_partner2', 'Kelly');
     }
+    let active = true;
+    (async () => {
+      const s = await loadCloudSettings();
+      if (!active) return;
+      if (typeof s.partner1 === 'string' && s.partner1) setPartner1(s.partner1);
+      if (typeof s.partner2 === 'string' && s.partner2) setPartner2(s.partner2);
+      if (s.ajustes_faturas && typeof s.ajustes_faturas === 'object') {
+        try { localStorage.setItem('fincasal_ajustes_faturas', JSON.stringify(s.ajustes_faturas)); } catch {}
+        setAjusteVersion(v => v + 1);
+      }
+    })();
+    return () => { active = false; };
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -407,6 +420,7 @@ export default function Home() {
       delete ajustes[key];
     }
     localStorage.setItem('fincasal_ajustes_faturas', JSON.stringify(ajustes));
+    saveCloudSetting('ajustes_faturas', ajustes);
     setAjusteVersion(v => v + 1);
     setReajusteFatura(null);
     toast(value > 0
@@ -1039,6 +1053,7 @@ export default function Home() {
                       onChange={(e) => {
                         setPartner1(e.target.value);
                         localStorage.setItem('fincasal_partner1', e.target.value);
+                        saveCloudSetting('partner1', e.target.value);
                       }}
                     />
                   </div>
@@ -1051,11 +1066,12 @@ export default function Home() {
                       onChange={(e) => {
                         setPartner2(e.target.value);
                         localStorage.setItem('fincasal_partner2', e.target.value);
+                        saveCloudSetting('partner2', e.target.value);
                       }}
                     />
                   </div>
                 </div>
-                <p className="text-xs text-slate-500">Os nomes são salvos automaticamente neste dispositivo.</p>
+                <p className="text-xs text-slate-500">Os nomes são salvos automaticamente e sincronizados entre os aparelhos.</p>
               </CardContent>
             </Card>
 
