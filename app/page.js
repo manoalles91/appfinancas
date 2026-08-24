@@ -9,8 +9,10 @@ import NavTabs from '@/components/NavTabs';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import CSVManager from '@/components/CSVManager';
 import CategoriesEditor from '@/components/CategoriesEditor';
+import Wishlist from '@/components/Wishlist';
+import HouseTasks from '@/components/HouseTasks';
 import { useToast } from '@/components/ui/toast';
-import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal } from 'lucide-react';
+import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal, ShoppingBag, CheckSquare } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getCategories, getGroupId } from '@/lib/categories';
 import { loadCloudSettings, saveCloudSetting } from '@/lib/cloudSettings';
@@ -18,9 +20,9 @@ import { Card, CardContent } from '@/components/ui/card';
 
 const TABS = [
   { id: 'inicio', label: 'Início', icon: HomeIcon },
-  { id: 'transacoes', label: 'Transações', icon: ArrowLeftRight },
-  { id: 'cartoes', label: 'Cartões', icon: CreditCard },
-  { id: 'relatorios', label: 'Relatórios', icon: PieChart },
+  { id: 'financas', label: 'Finanças', icon: ArrowLeftRight },
+  { id: 'desejos', label: 'Desejos', icon: ShoppingBag },
+  { id: 'tarefas', label: 'Tarefas', icon: CheckSquare },
   { id: 'config', label: 'Configurações', icon: Settings },
 ];
 
@@ -30,6 +32,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [viewDate, setViewDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState('inicio');
+  const [financeSubTab, setFinanceSubTab] = useState('transacoes'); // transacoes | cartoes | relatorios
+  const [wishlist, setWishlist] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const { toast } = useToast();
 
   const [partner1, setPartner1] = useState('Alle');
@@ -106,7 +111,7 @@ export default function Home() {
     });
   };
 
-  // Carrega nomes do localStorage (padrão Kelly se não definido) e sincroniza com a nuvem
+  // Carrega nomes, wishlist e tarefas do localStorage e sincroniza com a nuvem
   useEffect(() => {
     const p1 = localStorage.getItem('fincasal_partner1');
     const p2 = localStorage.getItem('fincasal_partner2');
@@ -116,6 +121,17 @@ export default function Home() {
       setPartner2('Kelly');
       localStorage.setItem('fincasal_partner2', 'Kelly');
     }
+
+    try {
+      const localWishlist = localStorage.getItem('fincasal_wishlist');
+      if (localWishlist) setWishlist(JSON.parse(localWishlist));
+    } catch {}
+
+    try {
+      const localTasks = localStorage.getItem('fincasal_tasks');
+      if (localTasks) setTasks(JSON.parse(localTasks));
+    } catch {}
+
     let active = true;
     (async () => {
       const s = await loadCloudSettings();
@@ -126,9 +142,98 @@ export default function Home() {
         try { localStorage.setItem('fincasal_ajustes_faturas', JSON.stringify(s.ajustes_faturas)); } catch {}
         setAjusteVersion(v => v + 1);
       }
+      if (s.wishlist && Array.isArray(s.wishlist)) {
+        setWishlist(s.wishlist);
+        try { localStorage.setItem('fincasal_wishlist', JSON.stringify(s.wishlist)); } catch {}
+      }
+      if (s.tasks && Array.isArray(s.tasks)) {
+        setTasks(s.tasks);
+        try { localStorage.setItem('fincasal_tasks', JSON.stringify(s.tasks)); } catch {}
+      }
     })();
     return () => { active = false; };
   }, []);
+
+  // Handlers para Lista de Desejos
+  const handleAddWishlist = useCallback(async (item) => {
+    setWishlist(prev => {
+      const next = [item, ...prev];
+      try { localStorage.setItem('fincasal_wishlist', JSON.stringify(next)); } catch {}
+      saveCloudSetting('wishlist', next);
+      return next;
+    });
+    toast('Item adicionado à lista de desejos!');
+  }, [toast]);
+
+  const handleUpdateWishlist = useCallback(async (item) => {
+    setWishlist(prev => {
+      const next = prev.map(w => w.id === item.id ? item : w);
+      try { localStorage.setItem('fincasal_wishlist', JSON.stringify(next)); } catch {}
+      saveCloudSetting('wishlist', next);
+      return next;
+    });
+    toast('Item atualizado!');
+  }, [toast]);
+
+  const handleDeleteWishlist = useCallback(async (id) => {
+    setWishlist(prev => {
+      const next = prev.filter(w => w.id !== id);
+      try { localStorage.setItem('fincasal_wishlist', JSON.stringify(next)); } catch {}
+      saveCloudSetting('wishlist', next);
+      return next;
+    });
+    toast('Item removido.');
+  }, [toast]);
+
+  // Handlers para Tarefas da Casa
+  const handleAddTask = useCallback(async (task) => {
+    setTasks(prev => {
+      const next = [task, ...prev];
+      try { localStorage.setItem('fincasal_tasks', JSON.stringify(next)); } catch {}
+      saveCloudSetting('tasks', next);
+      return next;
+    });
+    toast('Tarefa adicionada!');
+  }, [toast]);
+
+  const handleToggleTask = useCallback(async (id, completed) => {
+    setTasks(prev => {
+      const next = prev.map(t => t.id === id ? { ...t, completed, completed_at: completed ? new Date().toISOString() : null } : t);
+      try { localStorage.setItem('fincasal_tasks', JSON.stringify(next)); } catch {}
+      saveCloudSetting('tasks', next);
+      return next;
+    });
+  }, []);
+
+  const handleUpdateTask = useCallback(async (task) => {
+    setTasks(prev => {
+      const next = prev.map(t => t.id === task.id ? task : t);
+      try { localStorage.setItem('fincasal_tasks', JSON.stringify(next)); } catch {}
+      saveCloudSetting('tasks', next);
+      return next;
+    });
+    toast('Tarefa atualizada!');
+  }, [toast]);
+
+  const handleDeleteTask = useCallback(async (id) => {
+    setTasks(prev => {
+      const next = prev.filter(t => t.id !== id);
+      try { localStorage.setItem('fincasal_tasks', JSON.stringify(next)); } catch {}
+      saveCloudSetting('tasks', next);
+      return next;
+    });
+    toast('Tarefa removida.');
+  }, [toast]);
+
+  const handleClearCompletedTasks = useCallback(async () => {
+    setTasks(prev => {
+      const next = prev.filter(t => !t.completed);
+      try { localStorage.setItem('fincasal_tasks', JSON.stringify(next)); } catch {}
+      saveCloudSetting('tasks', next);
+      return next;
+    });
+    toast('Tarefas concluídas foram limpas.');
+  }, [toast]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -245,6 +350,41 @@ export default function Home() {
     if (error) throw error;
     setTransactions(prev => [data[0], ...prev]);
   }, []);
+
+  const handleConvertToTransaction = useCallback(async (wishlistItem) => {
+    try {
+      const targetMap = {
+        'Filhos': 'Filhos',
+        [partner1]: 'Eu',
+        [partner2]: 'Outro',
+        'Casa': 'Comum'
+      };
+      const quem = targetMap[wishlistItem.target] || 'Comum';
+      const newTx = {
+        description: wishlistItem.title,
+        amount: Number(wishlistItem.price || 0),
+        type: 'expense',
+        category: wishlistItem.category || 'Compras',
+        date: new Date().toISOString().slice(0, 10),
+        cardName: null,
+        installmentInfo: null,
+        pago: true,
+        fixa: false,
+        payment_method: 'checking',
+        quem,
+        subcategoria: 'Wishlist',
+        destino: wishlistItem.url || '',
+        ajuste: 0
+      };
+
+      await handleAddTransaction(newTx);
+      await handleUpdateWishlist({ ...wishlistItem, status: 'purchased' });
+      toast(`Gasto "${wishlistItem.title}" registrado como pago e marcado na lista!`);
+    } catch (err) {
+      console.error('Error converting wishlist item:', err);
+      toast('Erro ao converter: ' + err.message, 'error');
+    }
+  }, [handleAddTransaction, handleUpdateWishlist, partner1, partner2, toast]);
 
   const handleBulkAdd = useCallback(async (items, successMessage) => {
     try {
@@ -489,7 +629,84 @@ export default function Home() {
     }
   }, [toast]);
 
-  const handleDeleteByIds = useCallback(async (ids, options = {}) => {
+    const handleDeleteByIds = useCallback(async (ids, options = {}) => {
+    if (!ids || ids.length === 0) return true;
+    
+    // Get the transaction data from options to check type
+    const transaction = options.transaction;
+    
+    // Check if it's a fixed transaction
+    const isFixed = transaction && (transaction.fixa || transaction.isParcela);
+    
+    // For fixed transactions, show confirmation
+    if (isFixed) {
+      const deleteOnlyThis = window.confirm(
+        'Esta transacao é fixa/recorrente. Deseja excluir apenas este mês ou todas as ocorrências com este nome?'
+      );
+      
+      if (deleteOnlyThis) {
+        // Delete only the selected items
+        try {
+          const { error } = await supabase.from('transactions').delete().in('id', ids);
+          if (error) throw error;
+          setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
+          toast('Transação excluída com sucesso!', 'success');
+          return true;
+        } catch (error) {
+          console.error('Error deleting transaction:', error.message);
+          toast('Erro ao excluir transação: ' + error.message, 'error');
+          return false;
+        }
+      } else {
+        // User chose to delete all fixed transactions with this description
+        try {
+          const desc = transaction.description;
+          // Delete ALL transactions with this description that are fixed
+          // Get the IDs of all fixed transactions with this description first
+          const { data: allTx, error: fetchErr } = await supabase
+            .from('transactions')
+            .select('id')
+            .ilike('description', desc);
+          
+          if (fetchErr) throw fetchErr;
+          
+          // Filter to keep only those with fixa: true
+          const fixedIds = allTx ? allTx.filter(t => t.fixa).map(t => t.id) : [];
+          
+          // Also include the originally selected IDs
+          const allIds = [...new Set([...ids, ...fixedIds])];
+          
+          const { error: delError } = await supabase
+            .from('transactions')
+            .delete()
+            .in('id', allIds);
+          
+          if (delError) throw delError;
+          
+          setTransactions(prev => prev.filter(t => !allIds.includes(t.id)));
+          toast('Todas as transações com este nome foram excluídas!', 'success');
+          return true;
+        } catch (error) {
+          console.error('Error deleting all fixed transactions:', error.message);
+          toast('Erro ao excluir transações: ' + error.message, 'error');
+          return false;
+        }
+      }
+    }
+    
+    // Default behavior for non-fixed transactions: delete only the selected items
+    try {
+      const { error } = await supabase.from('transactions').delete().in('id', ids);
+      if (error) throw error;
+      setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
+      toast('Transação excluída com sucesso!', 'success');
+      return true;
+    } catch (error) {
+      console.error('Error deleting transaction:', error.message);
+      toast('Erro ao excluir transação: ' + error.message, 'error');
+      return false;
+    }
+  }, [toast]);
     if (!ids || ids.length === 0) return true;
     
     // Get the transaction data from options to check type
@@ -803,12 +1020,14 @@ export default function Home() {
 
   const openTransactionsWithPending = () => {
     setTransactionStatusFilter('pending');
-    setActiveTab('transacoes');
+    setActiveTab('financas');
+    setFinanceSubTab('transacoes');
   };
 
   const filterByCard = (cardName) => {
     setSelectedCardFilter(selectedCardFilter === cardName ? null : cardName);
-    setActiveTab('transacoes');
+    setActiveTab('financas');
+    setFinanceSubTab('transacoes');
   };
 
   return (
@@ -821,16 +1040,16 @@ export default function Home() {
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">Minhas Finanças</h1>
+                <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">Minhas Finanças & Casa</h1>
                 <button
                   onClick={() => setActiveTab('config')}
                   className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 hover:border-slate-600 transition-all text-slate-400 hover:text-white cursor-pointer"
-                  title="Configurações do Casal"
+                  title="Configurações da Casa e Família"
                 >
                   <Settings className="h-4 w-4" />
                 </button>
               </div>
-              <p className="text-slate-400 font-medium text-sm">Controle Compartilhado ({partner1} & {partner2})</p>
+              <p className="text-slate-400 font-medium text-sm">Controle da Casa ({partner1}, {partner2} & Filhos)</p>
             </div>
           </div>
 
@@ -878,238 +1097,308 @@ export default function Home() {
               onAddMany={handleBulkAdd}
               onDeleteByIds={handleDeleteByIds}
               viewDate={viewDate}
+              tasks={tasks}
+              wishlist={wishlist}
+              onNavigateTab={(tab) => {
+                if (tab === 'financas') {
+                  setActiveTab('financas');
+                  setFinanceSubTab('transacoes');
+                } else {
+                  setActiveTab(tab);
+                }
+              }}
             />
           </div>
         )}
 
-        {/* Aba: Transações */}
-        {activeTab === 'transacoes' && (
+        {/* Aba: Finanças (Centraliza Transações, Cartões e Relatórios) */}
+        {activeTab === 'financas' && (
           <div className="space-y-6">
-            {selectedCardFilter && (
-              <div className="flex items-center justify-between p-3 bg-purple-500/10 border border-purple-500/30 rounded-2xl animate-fade-in">
-                <span className="text-xs font-bold text-purple-300">
-                  Exibindo apenas transações do cartão: <strong className="text-white font-black">{selectedCardFilter}</strong>
-                </span>
+            {/* Sub-navegação discreta de Finanças */}
+            <div className="flex flex-wrap gap-2 p-1.5 rounded-2xl bg-slate-800/60 border border-slate-700/80 w-full sm:w-auto self-start">
+              {[
+                { id: 'transacoes', label: '📄 Transações & Lançamentos' },
+                { id: 'cartoes', label: '💳 Faturas & Cartões' },
+                { id: 'relatorios', label: '📊 Relatórios' }
+              ].map((sub) => (
                 <button
-                  onClick={() => setSelectedCardFilter(null)}
-                  className="text-xs font-bold text-purple-400 hover:text-white bg-purple-500/20 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                  key={sub.id}
+                  onClick={() => setFinanceSubTab(sub.id)}
+                  className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                    financeSubTab === sub.id
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/40'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
+                  }`}
                 >
-                  Ver Todas
+                  {sub.label}
                 </button>
+              ))}
+            </div>
+
+            {/* Sub-Aba: Transações */}
+            {financeSubTab === 'transacoes' && (
+              <div className="space-y-6 animate-fade-in">
+                {selectedCardFilter && (
+                  <div className="flex items-center justify-between p-3 bg-purple-500/10 border border-purple-500/30 rounded-2xl animate-fade-in">
+                    <span className="text-xs font-bold text-purple-300">
+                      Exibindo apenas transações do cartão: <strong className="text-white font-black">{selectedCardFilter}</strong>
+                    </span>
+                    <button
+                      onClick={() => setSelectedCardFilter(null)}
+                      className="text-xs font-bold text-purple-400 hover:text-white bg-purple-500/20 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                    >
+                      Ver Todas
+                    </button>
+                  </div>
+                )}
+
+                <CSVManager
+                  transactions={transactions}
+                  onImport={handleImportTransactions}
+                />
+
+                <div className="grid gap-8 lg:grid-cols-2">
+                  <AddTransactionForm
+                    onAdd={handleAddTransaction}
+                    onAddMany={handleBulkAdd}
+                    cartoes={cartoes}
+                    partner1={partner1}
+                    partner2={partner2}
+                  />
+                  <TransactionList
+                    transactions={monthTransactions}
+                    onDelete={setTxToDelete}
+                    onEdit={openEditTransaction}
+                    onTogglePaid={handleTogglePaid}
+                    onAdjustAmount={handleAdjustAmount}
+                    onPayInvoice={handlePayInvoice}
+                    statusFilter={transactionStatusFilter}
+                    onStatusFilterChange={setTransactionStatusFilter}
+                    partner1={partner1}
+                    partner2={partner2}
+                    selectedCardFilter={selectedCardFilter}
+                    onClearCardFilter={() => setSelectedCardFilter(null)}
+                    viewDate={viewDate}
+                    variaveis={variaveis}
+                  />
+                </div>
               </div>
             )}
 
-            <CSVManager
-              transactions={transactions}
-              onImport={handleImportTransactions}
-            />
+            {/* Sub-Aba: Cartões */}
+            {financeSubTab === 'cartoes' && (
+              <section className="space-y-6 animate-fade-in">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-indigo-400" />
+                    Cartões de Crédito
+                  </h2>
+                  <button
+                    onClick={() => setIsAddCardModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition-all cursor-pointer shadow-lg shadow-indigo-500/20 border border-indigo-400/30 hover:scale-105"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Adicionar Novo Cartão
+                  </button>
+                </div>
 
-            <div className="grid gap-8 lg:grid-cols-2">
-              <AddTransactionForm
-                onAdd={handleAddTransaction}
-                onAddMany={handleBulkAdd}
-                cartoes={cartoes}
-                partner1={partner1}
-                partner2={partner2}
-              />
-              <TransactionList
-                transactions={monthTransactions}
-                onDelete={setTxToDelete}
-                onEdit={openEditTransaction}
-                onTogglePaid={handleTogglePaid}
-                onAdjustAmount={handleAdjustAmount}
-                onPayInvoice={handlePayInvoice}
-                statusFilter={transactionStatusFilter}
-                onStatusFilterChange={setTransactionStatusFilter}
-                partner1={partner1}
-                partner2={partner2}
-                selectedCardFilter={selectedCardFilter}
-                onClearCardFilter={() => setSelectedCardFilter(null)}
-                viewDate={viewDate}
-                variaveis={variaveis}
-              />
-            </div>
+                {cardsSummary.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-12 bg-slate-800/40 rounded-3xl border border-slate-700 text-center space-y-3">
+                    <CreditCard className="h-10 w-10 text-slate-500" />
+                    <p className="text-slate-300 font-medium">Nenhum cartão cadastrado ainda.</p>
+                    <button
+                      onClick={() => setIsAddCardModalOpen(true)}
+                      className="mt-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition-all cursor-pointer"
+                    >
+                      <Plus className="h-4 w-4 inline mr-1" />
+                      Adicionar o primeiro cartão
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {cardsSummary.map((card) => (
+                      <Card key={card.id} className="bg-[#1e293b] border-slate-800 shadow-xl overflow-hidden group hover:border-slate-700 transition-all">
+                        <CardContent className="p-6 space-y-6">
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-3">
+                              <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-xl ${
+                                card.nome === 'Nubank' ? 'bg-[#8a05be]' :
+                                card.nome === 'Inter' ? 'bg-[#ff7a00]' :
+                                card.nome === 'Sicoob' ? 'bg-[#003641]' : 'bg-[#17469e]'
+                              }`}>
+                                {card.nome.charAt(0)}
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-lg text-white">{card.nome}</h3>
+                                <p className="text-xs text-slate-400 uppercase tracking-wider">{card.bandeira || 'MasterCard'}</p>
+                              </div>
+                            </div>
+
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
+                              card.isPaga
+                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                              : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                            }`}>
+                              {card.isPaga ? 'Paga' : 'Aberta'}
+                            </span>
+                            {card.isAjustada && (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+                                AJUSTADA
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 text-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase font-black">Limite</p>
+                              <p className="text-xs font-bold text-slate-300">R${Number(card.limite).toLocaleString('pt-BR')}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-red-400 uppercase font-black">Em Aberto</p>
+                              <p className="text-xs font-bold text-red-400">R${card.faturaAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-emerald-400 uppercase font-black">Livre</p>
+                              <p className="text-xs font-bold text-emerald-400">R${card.disponivel.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-1000 ${card.percentual > 80 ? 'bg-red-500' : 'bg-indigo-500'}`}
+                                style={{ width: `${Math.min(card.percentual, 100)}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-500 font-bold uppercase">
+                              <span>{Math.round(card.percentual)}% utilizado</span>
+                              <span>Disponível: {Math.round(100 - card.percentual)}%</span>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-end pt-4 border-t border-slate-800">
+                            <div className="text-[10px] text-slate-400 space-y-1">
+                              <p>Vencimento: <span className="text-slate-200">dia {card.vencimento}</span></p>
+                              <p>Fechamento: <span className="text-slate-200">dia {card.fechamento}</span></p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-slate-500 uppercase font-black">Fatura {monthLabel}</p>
+                              <p className="text-xl font-black text-white">R$ {card.faturaAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => setExpandedPurchases(expandedPurchases === card.nome ? null : card.nome)}
+                            className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] font-black rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-300 ${expandedPurchases === card.nome ? 'rotate-180' : ''}`} />
+                            {expandedPurchases === card.nome ? 'OCULTAR COMPRAS' : `VER COMPRAS (${card.totalItems})`}
+                          </button>
+                          {expandedPurchases === card.nome && (
+                            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                              {card.purchases.length === 0 ? (
+                                <p className="text-[11px] text-slate-500 text-center py-3">Nenhuma compra neste mês.</p>
+                              ) : (
+                                card.purchases.map((p) => (
+                                  <div key={p.id} className="flex items-center justify-between text-[11px] rounded-lg bg-slate-900/60 px-2.5 py-1.5 border border-slate-800/60">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-slate-200 font-medium">{p.description}</p>
+                                      <p className="text-[9px] text-slate-500">
+                                        {p.installment_info ? `${p.installment_info} • ` : ''}
+                                        {new Date(p.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                      </p>
+                                    </div>
+                                    <span className={`text-xs font-bold shrink-0 ml-2 ${p.pago ? 'text-emerald-400' : 'text-purple-300'}`}>
+                                      R$ {Number(p.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}{p.pago ? ' ✓' : ''}
+                                    </span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex flex-col gap-2">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handlePayInvoice(card.nome, !card.isPaga)}
+                                className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-2 cursor-pointer ${
+                                  card.isPaga
+                                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500/30 shadow-lg shadow-emerald-500/20'
+                                }`}
+                              >
+                                {card.isPaga ? 'REABRIR FATURA' : 'PAGAR FATURA'}
+                              </button>
+                              <button
+                                onClick={() => filterByCard(card.nome)}
+                                className={`px-3 py-2.5 text-xs font-black rounded-xl transition-all border cursor-pointer ${
+                                  selectedCardFilter === card.nome
+                                  ? 'bg-purple-500/30 text-purple-300 border-purple-500/50'
+                                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                                }`}
+                                title="Filtrar compras deste cartão"
+                              >
+                                COMPRAS
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => openFaturaAdjust(card)}
+                              className="w-full py-2 bg-indigo-950/50 hover:bg-indigo-900/50 text-indigo-300 hover:text-indigo-200 text-[11px] font-bold rounded-xl transition-all border border-indigo-500/30 flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <SlidersHorizontal className="h-3 w-3" /> REAJUSTAR FATURA
+                            </button>
+                            <button
+                              onClick={() => { setEditingCard(card); setIsEditModalOpen(true); }}
+                              className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-[11px] font-bold rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Edit3 className="h-3 w-3" /> Reajustar Limite e Datas
+                            </button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Sub-Aba: Relatórios */}
+            {financeSubTab === 'relatorios' && (
+              <div className="animate-fade-in">
+                <Reports transactions={monthTransactions} />
+              </div>
+            )}
           </div>
         )}
 
-        {/* Aba: Cartões */}
-        {activeTab === 'cartoes' && (
-          <section className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                <CreditCard className="h-5 w-5 text-indigo-400" />
-                Cartões de Crédito
-              </h2>
-              <button
-                onClick={() => setIsAddCardModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition-all cursor-pointer shadow-lg shadow-indigo-500/20 border border-indigo-400/30 hover:scale-105"
-              >
-                <Plus className="h-4 w-4" />
-                Adicionar Novo Cartão
-              </button>
-            </div>
-
-            {cardsSummary.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-12 bg-slate-800/40 rounded-3xl border border-slate-700 text-center space-y-3">
-                <CreditCard className="h-10 w-10 text-slate-500" />
-                <p className="text-slate-300 font-medium">Nenhum cartão cadastrado ainda.</p>
-                <button
-                  onClick={() => setIsAddCardModalOpen(true)}
-                  className="mt-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition-all cursor-pointer"
-                >
-                  <Plus className="h-4 w-4 inline mr-1" />
-                  Adicionar o primeiro cartão
-                </button>
-              </div>
-            ) : (
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {cardsSummary.map((card) => (
-                  <Card key={card.id} className="bg-[#1e293b] border-slate-800 shadow-xl overflow-hidden group hover:border-slate-700 transition-all">
-                    <CardContent className="p-6 space-y-6">
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-center gap-3">
-                          <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-xl ${
-                            card.nome === 'Nubank' ? 'bg-[#8a05be]' :
-                            card.nome === 'Inter' ? 'bg-[#ff7a00]' :
-                            card.nome === 'Sicoob' ? 'bg-[#003641]' : 'bg-[#17469e]'
-                          }`}>
-                            {card.nome.charAt(0)}
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-lg text-white">{card.nome}</h3>
-                            <p className="text-xs text-slate-400 uppercase tracking-wider">{card.bandeira || 'MasterCard'}</p>
-                          </div>
-                        </div>
-
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
-                          card.isPaga
-                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                          : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                        }`}>
-                          {card.isPaga ? 'Paga' : 'Aberta'}
-                        </span>
-                        {card.isAjustada && (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
-                            AJUSTADA
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 text-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase font-black">Limite</p>
-                          <p className="text-xs font-bold text-slate-300">R${Number(card.limite).toLocaleString('pt-BR')}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-red-400 uppercase font-black">Em Aberto</p>
-                          <p className="text-xs font-bold text-red-400">R${card.faturaAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-emerald-400 uppercase font-black">Livre</p>
-                          <p className="text-xs font-bold text-emerald-400">R${card.disponivel.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-1000 ${card.percentual > 80 ? 'bg-red-500' : 'bg-indigo-500'}`}
-                            style={{ width: `${Math.min(card.percentual, 100)}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[10px] text-slate-500 font-bold uppercase">
-                          <span>{Math.round(card.percentual)}% utilizado</span>
-                          <span>Disponível: {Math.round(100 - card.percentual)}%</span>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-between items-end pt-4 border-t border-slate-800">
-                        <div className="text-[10px] text-slate-400 space-y-1">
-                          <p>Vencimento: <span className="text-slate-200">dia {card.vencimento}</span></p>
-                          <p>Fechamento: <span className="text-slate-200">dia {card.fechamento}</span></p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] text-slate-500 uppercase font-black">Fatura {monthLabel}</p>
-                          <p className="text-xl font-black text-white">R$ {card.faturaAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => setExpandedPurchases(expandedPurchases === card.nome ? null : card.nome)}
-                        className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] font-black rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-300 ${expandedPurchases === card.nome ? 'rotate-180' : ''}`} />
-                        {expandedPurchases === card.nome ? 'OCULTAR COMPRAS' : `VER COMPRAS (${card.totalItems})`}
-                      </button>
-                      {expandedPurchases === card.nome && (
-                        <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                          {card.purchases.length === 0 ? (
-                            <p className="text-[11px] text-slate-500 text-center py-3">Nenhuma compra neste mês.</p>
-                          ) : (
-                            card.purchases.map((p) => (
-                              <div key={p.id} className="flex items-center justify-between text-[11px] rounded-lg bg-slate-900/60 px-2.5 py-1.5 border border-slate-800/60">
-                                <div className="min-w-0">
-                                  <p className="truncate text-slate-200 font-medium">{p.description}</p>
-                                  <p className="text-[9px] text-slate-500">
-                                    {p.installment_info ? `${p.installment_info} • ` : ''}
-                                    {new Date(p.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                                  </p>
-                                </div>
-                                <span className={`text-xs font-bold shrink-0 ml-2 ${p.pago ? 'text-emerald-400' : 'text-purple-300'}`}>
-                                  R$ {Number(p.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}{p.pago ? ' ✓' : ''}
-                                </span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      )}
-
-                      <div className="flex flex-col gap-2">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handlePayInvoice(card.nome, !card.isPaga)}
-                            className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-2 cursor-pointer ${
-                              card.isPaga
-                              ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500/30 shadow-lg shadow-emerald-500/20'
-                            }`}
-                          >
-                            {card.isPaga ? 'REABRIR FATURA' : 'PAGAR FATURA'}
-                          </button>
-                          <button
-                            onClick={() => filterByCard(card.nome)}
-                            className={`px-3 py-2.5 text-xs font-black rounded-xl transition-all border cursor-pointer ${
-                              selectedCardFilter === card.nome
-                              ? 'bg-purple-500/30 text-purple-300 border-purple-500/50'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                            }`}
-                            title="Filtrar compras deste cartão"
-                          >
-                            COMPRAS
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => openFaturaAdjust(card)}
-                          className="w-full py-2 bg-indigo-950/50 hover:bg-indigo-900/50 text-indigo-300 hover:text-indigo-200 text-[11px] font-bold rounded-xl transition-all border border-indigo-500/30 flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <SlidersHorizontal className="h-3 w-3" /> REAJUSTAR FATURA
-                        </button>
-                        <button
-                          onClick={() => { setEditingCard(card); setIsEditModalOpen(true); }}
-                          className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-[11px] font-bold rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Edit3 className="h-3 w-3" /> Reajustar Limite e Datas
-                        </button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </section>
+        {/* Aba: Desejos & Compras */}
+        {activeTab === 'desejos' && (
+          <Wishlist
+            wishlist={wishlist}
+            onAdd={handleAddWishlist}
+            onUpdate={handleUpdateWishlist}
+            onDelete={handleDeleteWishlist}
+            onConvertToTransaction={handleConvertToTransaction}
+            partner1={partner1}
+            partner2={partner2}
+          />
         )}
 
-        {/* Aba: Relatórios */}
+        {/* Aba: Tarefas da Casa */}
+        {activeTab === 'tarefas' && (
+          <HouseTasks
+            tasks={tasks}
+            onAdd={handleAddTask}
+            onToggle={handleToggleTask}
+            onUpdate={handleUpdateTask}
+            onDelete={handleDeleteTask}
+            onClearCompleted={handleClearCompletedTasks}
+            partner1={partner1}
+            partner2={partner2}
+          />
+        )}
+
+        {/* Aba: Relatórios (para compatibilidade direta se acessado) */}
         {activeTab === 'relatorios' && (
           <Reports transactions={monthTransactions} />
         )}
@@ -1530,6 +1819,7 @@ export default function Home() {
                     <option value="Comum">Comum</option>
                     <option value="Comum - Eu">Comum ({partner1})</option>
                     <option value="Comum - Outro">Comum ({partner2})</option>
+                    <option value="Filhos">👶 Filhos</option>
                   </select>
                 </div>
               </div>
