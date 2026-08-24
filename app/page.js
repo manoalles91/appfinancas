@@ -301,7 +301,7 @@ export default function Home() {
             amount: refRow.amount,
             type: refRow.type,
             category: refRow.category,
-            date: new Date(y, mo, Math.min(ref.getDate(), lastDay)).toISOString(),
+            date: new Date(y, mo, Math.min(ref.getDate(), lastDay), 12, 0, 0).toISOString(),
             fixa: true,
             pago: false,
             payment_method: refRow.payment_method || 'checking',
@@ -442,7 +442,7 @@ export default function Home() {
         if (t && t.fixa && !t.installment_info) {
           const d = new Date((t.date || '').slice(0, 10) + 'T12:00:00');
           const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
-          const nextDate = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), lastDay));
+          const nextDate = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), lastDay), 12, 0, 0);
           const nextKey = nextDate.toISOString().slice(0, 7);
           const exists = transactions.some(x => x.fixa && !x.installment_info && x.description === t.description && x.date && x.date.slice(0, 7) === nextKey);
           if (!exists) {
@@ -489,16 +489,48 @@ export default function Home() {
     }
   }, [toast]);
 
-  const handleDeleteByIds = useCallback(async (ids) => {
+  const handleDeleteByIds = useCallback(async (ids, options = {}) => {
     if (!ids || ids.length === 0) return true;
+    
+    // Get the transaction data from options to check type
+    const transaction = options.transaction;
+    const isParceladoOrFixo = transaction && (transaction.isParcela || transaction.fixa);
+    
+    if (isParceladoOrFixo && !options.forceDeleteAll) {
+      // Show confirmation dialog for parcelado/fixo transactions
+      const deleteOnlyThis = window.confirm(
+        'Esta transação é parcelada ou fixa. Deseja excluir apenas este item ou todas as parcelas/ocorrências?'
+      );
+      
+      if (deleteOnlyThis) {
+        // Delete only the selected items
+        try {
+          const { error } = await supabase.from('transactions').delete().in('id', ids);
+          if (error) throw error;
+          setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
+          toast('Transação excluída com sucesso!', 'success');
+          return true;
+        } catch (error) {
+          console.error('Error deleting transaction:', error.message);
+          toast('Erro ao excluir transação: ' + error.message, 'error');
+          return false;
+        }
+      } else {
+        // User chose to delete all, proceed with forceDeleteAll
+        return handleDeleteByIds(ids, { forceDeleteAll: true });
+      }
+    }
+    
+    // Default behavior: delete only the selected items
     try {
       const { error } = await supabase.from('transactions').delete().in('id', ids);
       if (error) throw error;
       setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
+      toast('Transação excluída com sucesso!', 'success');
       return true;
     } catch (error) {
-      console.error('Error deleting financing parcels:', error.message);
-      toast('Erro ao remover parcelas: ' + error.message, 'error');
+      console.error('Error deleting transaction:', error.message);
+      toast('Erro ao excluir transação: ' + error.message, 'error');
       return false;
     }
   }, [toast]);
@@ -534,7 +566,7 @@ export default function Home() {
         description: editingTransaction.description,
         amount: base,
         type: editingTransaction.type,
-        date: editingTransaction.date,
+        date: new Date((editingTransaction.date || new Date().toISOString().slice(0, 10)) + 'T12:00:00').toISOString(),
         category: editingTransaction.category,
         subcategoria: editingTransaction.subcategoria || '',
         quem: editingTransaction.quem || 'Comum',
