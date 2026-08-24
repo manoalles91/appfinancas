@@ -12,7 +12,7 @@ import CategoriesEditor from '@/components/CategoriesEditor';
 import Wishlist from '@/components/Wishlist';
 import HouseTasks from '@/components/HouseTasks';
 import { useToast } from '@/components/ui/toast';
-import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal, ShoppingBag, CheckSquare } from 'lucide-react';
+import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal, ShoppingBag, CheckSquare, Calendar, FastForward } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getCategories, getGroupId } from '@/lib/categories';
 import { loadCloudSettings, saveCloudSetting } from '@/lib/cloudSettings';
@@ -629,84 +629,104 @@ export default function Home() {
     }
   }, [toast]);
 
-    const handleDeleteByIds = useCallback(async (ids, options = {}) => {
+  const handleDeleteByIds = useCallback(async (ids) => {
     if (!ids || ids.length === 0) return true;
-    
-    // Get the transaction data from options to check type
-    const transaction = options.transaction;
-    
-    // Check if it's a fixed transaction
-    const isFixed = transaction && (transaction.fixa || transaction.isParcela);
-    
-    // For fixed transactions, show confirmation
-    if (isFixed) {
-      const deleteOnlyThis = window.confirm(
-        'Esta transacao é fixa/recorrente. Deseja excluir apenas este mês ou todas as ocorrências com este nome?'
-      );
-      
-      if (deleteOnlyThis) {
-        // Delete only the selected items
-        try {
-          const { error } = await supabase.from('transactions').delete().in('id', ids);
-          if (error) throw error;
-          setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
-          toast('Transação excluída com sucesso!', 'success');
-          return true;
-        } catch (error) {
-          console.error('Error deleting transaction:', error.message);
-          toast('Erro ao excluir transação: ' + error.message, 'error');
-          return false;
-        }
-      } else {
-        // User chose to delete all fixed transactions with this description
-        try {
-          const desc = transaction.description;
-          // Delete ALL transactions with this description that are fixed
-          // Get the IDs of all fixed transactions with this description first
-          const { data: allTx, error: fetchErr } = await supabase
-            .from('transactions')
-            .select('id')
-            .ilike('description', desc);
-          
-          if (fetchErr) throw fetchErr;
-          
-          // Filter to keep only those with fixa: true
-          const fixedIds = allTx ? allTx.filter(t => t.fixa).map(t => t.id) : [];
-          
-          // Also include the originally selected IDs
-          const allIds = [...new Set([...ids, ...fixedIds])];
-          
-          const { error: delError } = await supabase
-            .from('transactions')
-            .delete()
-            .in('id', allIds);
-          
-          if (delError) throw delError;
-          
-          setTransactions(prev => prev.filter(t => !allIds.includes(t.id)));
-          toast('Todas as transações com este nome foram excluídas!', 'success');
-          return true;
-        } catch (error) {
-          console.error('Error deleting all fixed transactions:', error.message);
-          toast('Erro ao excluir transações: ' + error.message, 'error');
-          return false;
-        }
-      }
-    }
-    
-    // Default behavior for non-fixed transactions: delete only the selected items
     try {
       const { error } = await supabase.from('transactions').delete().in('id', ids);
       if (error) throw error;
       setTransactions(prev => prev.filter(t => !ids.includes(t.id)));
-      toast('Transação excluída com sucesso!', 'success');
+      toast('Registros excluídos com sucesso!');
       return true;
     } catch (error) {
-      console.error('Error deleting transaction:', error.message);
-      toast('Erro ao excluir transação: ' + error.message, 'error');
+      console.error('Error deleting by IDs:', error.message);
+      toast('Erro ao excluir: ' + error.message, 'error');
       return false;
     }
   }, [toast]);
+
+  const handleDeleteTransaction = useCallback(async (tx, scope = 'single') => {
+    if (!tx) return;
+    try {
+      const txId = typeof tx === 'object' ? tx.id : tx;
+      const txObj = typeof tx === 'object' ? tx : transactions.find(t => t.id === txId);
+      
+      if (!txObj) {
+        const { error } = await supabase.from('transactions').delete().eq('id', txId);
+        if (error) throw error;
+        setTransactions(prev => prev.filter(t => t.id !== txId));
+        toast('Transação excluída com sucesso!');
+        setTxToDelete(null);
+        return;
+      }
+
+      const desc = txObj.description;
+      const isFixa = !!txObj.fixa;
+      const isParcela = !!txObj.installment_info;
+      const targetMonth = (txObj.date || '').slice(0, 7);
+
+      if (scope === 'single' || (!isFixa && !isParcela)) {
+        // 1. Excluir somente esta
+        const { error } = await supabase.from('transactions').delete().eq('id', txObj.id);
+        if (error) throw error;
+        setTransactions(prev => prev.filter(t => t.id !== txObj.id));
+        toast('Transação deste mês excluída com sucesso!');
+      } else if (scope === 'future') {
+        // 2. Excluir deste mês em diante
+        let idsToDelete = [txObj.id];
+        if (isParcela) {
+          const m = String(txObj.installment_info).match(/^(\d+)\/(\d+)$/);
+          if (m) {
+            const currentN = parseInt(m[1], 10);
+            const totalN = m[2];
+            const siblings = transactions.filter(t => {
+              if (t.description !== desc) return false;
+              const sm = String(t.installment_info || '').match(/^(\d+)\/(\d+)$/);
+              return sm && sm[2] === totalN && parseInt(sm[1], 10) >= currentN;
+            });
+            idsToDelete = siblings.map(t => t.id);
+          }
+        } else if (isFixa) {
+          const matching = transactions.filter(t => {
+            if (!t.fixa || t.description !== desc) return false;
+            const mDate = (t.date || '').slice(0, 7);
+            return mDate >= targetMonth;
+          });
+          idsToDelete = matching.map(t => t.id);
+        }
+
+        const { error } = await supabase.from('transactions').delete().in('id', idsToDelete);
+        if (error) throw error;
+        setTransactions(prev => prev.filter(t => !idsToDelete.includes(t.id)));
+        toast(`${idsToDelete.length} ${idsToDelete.length === 1 ? 'lançamento excluído' : 'lançamentos excluídos'} deste mês em diante!`);
+      } else if (scope === 'all') {
+        // 3. Excluir todas as ocorrências
+        let idsToDelete = [txObj.id];
+        if (isParcela) {
+          const m = String(txObj.installment_info).match(/^(\d+)\/(\d+)$/);
+          const totalN = m ? m[2] : '';
+          const siblings = transactions.filter(t => {
+            if (t.description !== desc) return false;
+            if (!totalN) return true;
+            const sm = String(t.installment_info || '').match(/^(\d+)\/(\d+)$/);
+            return sm && sm[2] === totalN;
+          });
+          idsToDelete = siblings.map(t => t.id);
+        } else if (isFixa) {
+          const matching = transactions.filter(t => t.fixa && t.description === desc);
+          idsToDelete = matching.map(t => t.id);
+        }
+
+        const { error } = await supabase.from('transactions').delete().in('id', idsToDelete);
+        if (error) throw error;
+        setTransactions(prev => prev.filter(t => !idsToDelete.includes(t.id)));
+        toast(`Todas as ${idsToDelete.length} ocorrências de "${desc}" foram excluídas!`);
+      }
+      setTxToDelete(null);
+    } catch (error) {
+      console.error('Error deleting transaction:', error.message);
+      toast('Erro ao excluir transação: ' + error.message, 'error');
+    }
+  }, [transactions, toast]);
 
   const handleUpdateTransaction = useCallback(async (e) => {
     e.preventDefault();
@@ -1971,17 +1991,123 @@ export default function Home() {
         </div>
       )}
 
-      {/* Confirmação de exclusão de transação */}
-      <ConfirmDialog
-        open={!!txToDelete}
-        title="Excluir Transação"
-        message="Deseja excluir esta transação? Esta ação não pode ser desfeita."
-        confirmLabel="EXCLUIR"
-        cancelLabel="CANCELAR"
-        danger
-        onConfirm={confirmDeleteTransaction}
-        onCancel={() => setTxToDelete(null)}
-      />
+      {/* Modal Inteligente de Exclusão de Transação */}
+      {txToDelete && (txToDelete.fixa || txToDelete.installment_info) ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1e293b] border border-red-500/30 w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-5 animate-scale-in text-white">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Excluir Lançamento</h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {txToDelete.fixa ? '🔁 Despesa/Receita Fixa Recorrente' : `📦 Compra Parcelada (${txToDelete.installment_info})`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setTxToDelete(null)} className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl space-y-1">
+              <p className="text-sm font-bold text-white truncate">{txToDelete.description}</p>
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span className="text-emerald-400 font-bold">R$ {Number(txToDelete.amount || 0).toFixed(2).replace('.', ',')}</span>
+                <span>•</span>
+                <span>
+                  {txToDelete.date ? (() => {
+                    const p = String(txToDelete.date).split('T')[0].split('-');
+                    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : txToDelete.date;
+                  })() : ''}
+                </span>
+                <span>•</span>
+                <span className="text-slate-300">{txToDelete.category}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Escolha como deseja excluir:</p>
+
+              {/* Opção 1: Excluir somente este mês */}
+              <button
+                onClick={() => handleDeleteTransaction(txToDelete, 'single')}
+                className="w-full text-left p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-500/50 transition-all flex items-start gap-3.5 cursor-pointer group shadow-sm"
+              >
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20 group-hover:scale-105 transition-all shrink-0 mt-0.5">
+                  <Calendar className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
+                    1. Excluir somente este mês
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    Apaga apenas este lançamento pontual. O histórico dos meses passados e os lançamentos futuros são mantidos.
+                  </p>
+                </div>
+              </button>
+
+              {/* Opção 2: Deste mês em diante */}
+              <button
+                onClick={() => handleDeleteTransaction(txToDelete, 'future')}
+                className="w-full text-left p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-orange-500/50 transition-all flex items-start gap-3.5 cursor-pointer group shadow-sm"
+              >
+                <div className="p-2 rounded-xl bg-orange-500/10 text-orange-400 group-hover:bg-orange-500/20 group-hover:scale-105 transition-all shrink-0 mt-0.5">
+                  <FastForward className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white group-hover:text-orange-300 transition-colors">
+                    2. Excluir deste mês em diante
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    Mantém o histórico passado e cancela/apaga todos os meses futuros a partir deste lançamento.
+                  </p>
+                </div>
+              </button>
+
+              {/* Opção 3: Todas as ocorrências */}
+              <button
+                onClick={() => handleDeleteTransaction(txToDelete, 'all')}
+                className="w-full text-left p-3.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500/50 transition-all flex items-start gap-3.5 cursor-pointer group shadow-sm"
+              >
+                <div className="p-2 rounded-xl bg-red-500/20 text-red-400 group-hover:scale-105 transition-all shrink-0 mt-0.5">
+                  <Trash2 className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-red-300 group-hover:text-red-200 transition-colors">
+                    3. Excluir TODAS as ocorrências (Série Completa)
+                  </p>
+                  <p className="text-xs text-red-400/80 mt-0.5 leading-relaxed">
+                    Apaga completamente todas as repetições passadas e futuras desta transação.
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => setTxToDelete(null)}
+                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all border border-slate-700 text-xs cursor-pointer"
+              >
+                CANCELAR
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : txToDelete ? (
+        <ConfirmDialog
+          open={true}
+          title="Excluir Transação"
+          message={`Deseja excluir a transação "${txToDelete.description || ''}" no valor de R$ ${Number(txToDelete.amount || 0).toFixed(2).replace('.', ',')}? Esta ação não pode ser desfeita.`}
+          confirmLabel="EXCLUIR"
+          cancelLabel="CANCELAR"
+          danger
+          onConfirm={() => handleDeleteTransaction(txToDelete, 'single')}
+          onCancel={() => setTxToDelete(null)}
+        />
+      ) : null}
 
       {/* Confirmação de exclusão de cartão */}
       <ConfirmDialog

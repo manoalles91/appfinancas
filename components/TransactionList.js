@@ -281,7 +281,7 @@ export default function TransactionList({
                     )}
                     {onDelete && (
                         <button
-                            onClick={() => onDelete(t.id, { transaction: t })}
+                            onClick={() => onDelete(t)}
                             className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/20 cursor-pointer"
                             title="Excluir"
                         >
