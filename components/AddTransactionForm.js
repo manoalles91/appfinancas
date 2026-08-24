@@ -97,7 +97,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                 const lastAmount = valorParcela
                     ? baseAmount
                     : Math.round((baseAmount - installmentAmount * (totalParc - 1)) * 100) / 100;
-                const baseDate = new Date(formData.date);
+                const baseDate = new Date(formData.date + 'T12:00:00');
 
                 for (let i = 0; i < totalParc; i++) {
                     const installDate = new Date(baseDate);
@@ -126,7 +126,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                     const year = baseDate.getFullYear();
                     const month = baseDate.getMonth() + i;
                     const lastDay = new Date(year, month + 1, 0).getDate();
-                    const recDate = new Date(year, month, Math.min(baseDate.getDate(), lastDay));
+                    const recDate = new Date(year, month, Math.min(baseDate.getDate(), lastDay), 12, 0, 0);
                     payloads.push({
                         description: formData.description,
                         amount: baseAmount,
@@ -148,7 +148,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                     amount: baseAmount,
                     type: formData.type,
                     category: formData.category || (formData.type === 'income' ? 'Salário' : 'Compras'),
-                    date: new Date(formData.date).toISOString(),
+                    date: new Date(formData.date + 'T12:00:00').toISOString(),
                     cardName: formData.type === 'credit' ? formData.cardName : undefined,
                     pago: formData.pago,
                     fixa: false,
@@ -446,6 +446,7 @@ export default function AddTransactionForm({ onAdd, onAddMany, cartoes = [], par
                                     <option value="Comum">Comum (Dividido 50/50)</option>
                                     <option value="Eu">{partner1} (Pessoal)</option>
                                     <option value="Outro">{partner2} (Pessoal)</option>
+                                    <option value="Filhos">Filhos (Crianças)</option>
                                 </select>
                             </div>
 

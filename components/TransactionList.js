@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCircle2, Clock, Lock, Pencil, X, Check, Edit3 } from 'lucide-react';
 
 export default function TransactionList({ 
-    transactions, 
+    transactions = [], 
     onDelete, 
     onEdit, 
     onTogglePaid, 
@@ -22,7 +22,7 @@ export default function TransactionList({
     variaveis = []
 }) {
     const [filter, setFilter] = useState('all'); // all | income | expense | credit
-    const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum
+    const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum | Filhos
     const [showAllPending, setShowAllPending] = useState(false);
     const [showAllPaid, setShowAllPaid] = useState(false);
     const [adjustFor, setAdjustFor] = useState(null);
@@ -48,6 +48,8 @@ export default function TransactionList({
             list = list.filter(t => t && (t.quem === 'Outro' || t.quem === 'Comum - Outro'));
         } else if (spenderFilter === 'Comum') {
             list = list.filter(t => t && t.quem && t.quem.startsWith('Comum'));
+        } else if (spenderFilter === 'Filhos') {
+            list = list.filter(t => t && (t.quem === 'Filhos' || t.quem === 'Comum - Filhos'));
         }
 
         if (viewDate) {
@@ -92,7 +94,7 @@ export default function TransactionList({
     const pendingDisplay = useMemo(() => consolidateCards(pendingList), [pendingList]);
     const paidDisplay = useMemo(() => consolidateCards(paidList), [paidList]);
 
-    const sum = (list) => list.reduce((acc, t) => acc + (t.amount || 0), 0);
+    const sum = (list) => list.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
     const pendingTotal = sum(pendingList);
     const paidTotal = sum(paidList);
     const grandTotal = pendingTotal + paidTotal;
@@ -108,7 +110,7 @@ export default function TransactionList({
         return new Intl.NumberFormat('pt-BR', {
             style: 'currency',
             currency: 'BRL',
-        }).format(value);
+        }).format(value || 0);
     };
 
     const formatDate = (dateString) => {
@@ -153,6 +155,9 @@ export default function TransactionList({
         }
         if (quem === 'Comum - Outro') {
             return <span className="text-[9px] font-black uppercase bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/25">Comum ({partner2})</span>;
+        }
+        if (quem === 'Filhos' || quem === 'Comum - Filhos') {
+            return <span className="text-[9px] font-black uppercase bg-cyan-500/10 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-500/25">👶 Filhos</span>;
         }
         if (quem === 'Comum') {
             return <span className="text-[9px] font-black uppercase bg-slate-500/10 text-slate-400 px-2 py-0.5 rounded-full border border-slate-500/25">Comum</span>;
@@ -209,7 +214,7 @@ export default function TransactionList({
             >
                 <div className="flex items-center gap-3 min-w-0">
                     <button 
-onClick={() => {
+                        onClick={() => {
                             if (!isPaid && (t.installment_info || isVariavel(t)) && onAdjustAmount) {
                                 setAdjustFor(t);
                                 setAdjustValue(String(Number(t.amount || 0).toFixed(2)).replace(',', '.'));
@@ -229,7 +234,7 @@ onClick={() => {
                         )}
                     </button>
                     <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <p className={`text-sm font-medium leading-tight truncate ${isPaid ? 'text-slate-400 line-through decoration-slate-500/50' : ''}`}>
                                 {t.description}
                             </p>
@@ -238,61 +243,40 @@ onClick={() => {
                         <div className="flex items-center gap-1.5 mt-0.5">
                             <span className="text-xs text-muted-foreground">{t.category}</span>
                             <span className="text-muted-foreground/40">•</span>
-                            <span className={`text-xs ${overdue ? 'font-bold text-red-400' : 'text-muted-foreground'}`}>{formatDate(t.date)}</span>
-                            {overdue && (
-                                <span className="text-[9px] font-black uppercase bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded-full border border-red-500/25">Vencida</span>
+                            <span className="text-xs text-muted-foreground">{formatDate(t.date)}</span>
+                            {t.installment_info && (
+                                <>
+                                    <span className="text-muted-foreground/40">•</span>
+                                    <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 px-1.5 py-0.2 rounded">
+                                        {t.installment_info}
+                                    </span>
+                                </>
                             )}
                             {t.fixa && (
-                                <>
-                                    <span className="text-muted-foreground/40">•</span>
-                                    <span className="flex items-center gap-0.5 text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1 rounded">
-                                        <Lock className="h-2.5 w-2.5" /> FIXA
-                                    </span>
-                                </>
+                                <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">
+                                    FIXA
+                                </span>
                             )}
-                            {isVariavel(t) && (
-                                <>
-                                    <span className="text-muted-foreground/40">•</span>
-                                    <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1 rounded">
-                                        <Clock className="h-2.5 w-2.5" /> VARIÁVEL
-                                    </span>
-                                </>
-                            )}
-                            {t.subcategoria && (
-                                <>
-                                    <span className="text-muted-foreground/40">•</span>
-                                    <span className="text-xs text-indigo-300/70 italic">{t.subcategoria}</span>
-                                </>
-                            )}
-                            {t.destino && (
-                                <>
-                                    <span className="text-muted-foreground/40">•</span>
-                                    <span className="text-xs text-slate-500">📍 {t.destino}</span>
-                                </>
-                            )}
-                            {t.card_name && (
-                                <>
-                                    <span className="text-muted-foreground/40">•</span>
-                                    <span className="text-xs text-purple-400/70">{t.card_name}</span>
-                                </>
-                            )}
-                            {t.installment_info && (
-                                <span className="text-xs text-purple-300/50 ml-0.5">({t.installment_info})</span>
+                            {overdue && (
+                                <span className="text-[9px] font-black uppercase text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                                    VENCIDA
+                                </span>
                             )}
                         </div>
                     </div>
                 </div>
+
                 <div className="flex items-center gap-2 shrink-0 ml-2">
-                    <span className={`text-sm font-semibold ${isPaid ? 'text-slate-400' : config.color}`}>
+                    <span className={`text-sm font-semibold ${isPaid ? 'text-slate-500' : config.color}`}>
                         {config.sign}{formatCurrency(t.amount)}
                     </span>
                     {onEdit && (
                         <button
                             onClick={() => onEdit(t)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-indigo-500/20 cursor-pointer"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-700/50 cursor-pointer text-slate-400 hover:text-white"
                             title="Editar"
                         >
-                            <Edit3 className="h-3.5 w-3.5 text-indigo-400" />
+                            <Edit3 className="h-3.5 w-3.5" />
                         </button>
                     )}
                     {onDelete && (
@@ -359,8 +343,7 @@ onClick={() => {
                         onClick={() => setShowAll(true)}
                         className="flex w-full items-center justify-center gap-1 rounded-lg py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-all cursor-pointer"
                     >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                        Ver mais ({count - 15} restantes)
+                        Ver todas ({count}) <ChevronDown className="h-3 w-3" />
                     </button>
                 )}
             </div>
@@ -368,14 +351,21 @@ onClick={() => {
     };
 
     return (
-        <Card className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
-            <CardHeader className="pb-3">
+        <Card className="animate-slide-up">
+            <CardHeader className="space-y-3 pb-3">
                 <div className="flex items-center justify-between">
                     <CardTitle className="text-base">Transações</CardTitle>
-                    <span className="text-xs text-muted-foreground">{filteredTransactions.length} itens</span>
+                    {selectedCardFilter && (
+                        <button
+                            onClick={onClearCardFilter}
+                            className="text-xs font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 bg-purple-500/10 px-2.5 py-1 rounded-lg border border-purple-500/20 cursor-pointer"
+                        >
+                            Filtro: {selectedCardFilter} <X className="h-3 w-3" />
+                        </button>
+                    )}
                 </div>
 
-                <div className="flex flex-col gap-3 pt-2">
+                <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                         <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3">
                             <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">⏳ A Pagar</p>
@@ -435,7 +425,8 @@ onClick={() => {
                             { value: 'all', label: '👥 Todos' },
                             { value: 'Eu', label: `Pessoal ${partner1}` },
                             { value: 'Outro', label: `Pessoal ${partner2}` },
-                            { value: 'Comum', label: '🏡 Comum' }
+                            { value: 'Comum', label: '🏡 Comum' },
+                            { value: 'Filhos', label: '👶 Filhos' }
                         ].map((sf) => (
                             <button
                                 key={sf.value}

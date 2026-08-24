@@ -1,36 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# 🏡 Minhas Finanças & Central da Casa (v2.0)
 
-## Getting Started
+Aplicação completa de controle financeiro do casal (**Alle & Kelly**), acompanhamento de despesas dos **Filhos**, lista de **Desejos & Compras Planejadas** com links externos, e gerenciador de **Tarefas & Rotinas da Casa**.
 
-First, run the development server:
+---
 
+## 🧭 Estrutura de Navegação (5 Abas)
+
+1. **🏠 Início:** Saldo atual, saldo previsto no fim do mês, despesas urgentes/vencidas, financiamentos, painel do casal com rateio automático e mini-widgets da casa.
+2. **💳 Finanças:**
+   - **📄 Transações & Lançamentos:** Formulário com suporte a despesas fixas (24 meses), parcelamentos até 48x e responsáveis (`Alle`, `Kelly`, `Comum`, `Filhos`).
+   - **💳 Faturas & Cartões:** Limites, faturas mensais, reajustes e baixa rápida.
+   - **📊 Relatórios:** Gráficos de categorias e comparativos mensais.
+3. **🛒 Desejos:** Vitrine de compras planejadas com links de lojas (Mercado Livre, Amazon, etc.), preços estimados, prioridades e botão *"COMPREI!"* (lança direto no caixa).
+4. **✅ Tarefas:** Checklist da casa com visões `Todas`, `🛒 Mercado / Feira` e `🔄 Rotinas Periódicas` (semanal, mensal, semestral, anual).
+5. **⚙️ Configurações:** Nomes do casal/família, categorias e opções de dados.
+
+---
+
+## 🛠️ Tecnologias
+* **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS, Lucide Icons
+* **Backend:** Supabase (PostgreSQL)
+* **Offline-First:** LocalStorage + Cloud Sync
+
+## 🚀 Como Rodar Localmente
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
+Acesse em: `http://localhost:3000`
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+*Para a documentação completa com detalhes do banco de dados e regras de negócio, consulte a nota no Obsidian Vault: `Minhas Finanças & Casa - Documentação Completa.md`.*

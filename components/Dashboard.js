@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 import { useMemo, useState } from 'react';
-import { CalendarClock, AlertCircle, CalendarDays } from 'lucide-react';
+import { CalendarClock, AlertCircle, CalendarDays, CheckSquare, ShoppingBag, ArrowRight, ExternalLink } from 'lucide-react';
 import Balances from '@/components/Balances';
 import Financiamentos from '@/components/Financiamentos';
 
@@ -20,7 +20,18 @@ const formatDate = (dateString) => {
     });
 };
 
-export default function Dashboard({ transactions = [], allTransactions = [], partner1 = 'Alle', partner2 = 'Kelly', onAddMany, onDeleteByIds, viewDate }) {
+export default function Dashboard({ 
+    transactions = [], 
+    allTransactions = [], 
+    partner1 = 'Alle', 
+    partner2 = 'Kelly', 
+    onAddMany, 
+    onDeleteByIds, 
+    viewDate,
+    tasks = [],
+    wishlist = [],
+    onNavigateTab
+}) {
     const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
     const allTxs = useMemo(() => (Array.isArray(allTransactions) ? allTransactions : []), [allTransactions]);
 
@@ -396,6 +407,94 @@ export default function Dashboard({ transactions = [], allTransactions = [], par
                     )}
                 </CardContent>
             </Card>
+
+            {/* Central da Casa: Mini-Widgets (Tarefas & Desejos) */}
+            <div className="grid gap-6 md:grid-cols-2">
+                {/* Mini-Widget: Tarefas Pendentes */}
+                <Card className="bg-[#1e293b]/70 border-slate-800 hover:border-slate-700 transition-all shadow-xl">
+                    <CardContent className="p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="h-9 w-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                                    <CheckSquare className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-white">Tarefas da Casa</h4>
+                                    <p className="text-[11px] text-slate-400">
+                                        {tasks.filter(t => !t.completed).length} pendentes no momento
+                                    </p>
+                                </div>
+                            </div>
+                            {onNavigateTab && (
+                                <button
+                                    onClick={() => onNavigateTab('tarefas')}
+                                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer transition-colors"
+                                >
+                                    Ver todas <ArrowRight className="h-3 w-3" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            {tasks.filter(t => !t.completed).slice(0, 3).map((task) => (
+                                <div key={task.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/50 border border-slate-800/80 text-xs">
+                                    <span className="font-medium text-slate-200 truncate mr-2">{task.title}</span>
+                                    <span className="text-[9px] font-black uppercase text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full shrink-0 border border-indigo-500/20">
+                                        {task.assigned_to || 'Casa'}
+                                    </span>
+                                </div>
+                            ))}
+                            {tasks.filter(t => !t.completed).length === 0 && (
+                                <p className="text-center text-slate-500 text-xs py-4">Tudo concluído! 🎉</p>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Mini-Widget: Desejos & Compras Planejadas */}
+                <Card className="bg-[#1e293b]/70 border-slate-800 hover:border-slate-700 transition-all shadow-xl">
+                    <CardContent className="p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                    <ShoppingBag className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-white">Desejos & Compras</h4>
+                                    <p className="text-[11px] text-slate-400">
+                                        {wishlist.filter(w => (w.status || 'planned') === 'planned').length} itens planejados
+                                    </p>
+                                </div>
+                            </div>
+                            {onNavigateTab && (
+                                <button
+                                    onClick={() => onNavigateTab('desejos')}
+                                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors"
+                                >
+                                    Ver lista <ArrowRight className="h-3 w-3" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            {wishlist.filter(w => (w.status || 'planned') === 'planned').slice(0, 3).map((item) => (
+                                <div key={item.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/50 border border-slate-800/80 text-xs">
+                                    <div className="min-w-0 flex-1 mr-2">
+                                        <p className="font-medium text-slate-200 truncate">{item.title}</p>
+                                        <p className="text-[10px] text-slate-500">{item.category || 'Geral'} • {item.target || 'Casa'}</p>
+                                    </div>
+                                    <span className="font-bold text-emerald-400 shrink-0">
+                                        {item.price > 0 ? formatCurrency(item.price) : 'R$ --'}
+                                    </span>
+                                </div>
+                            ))}
+                            {wishlist.filter(w => (w.status || 'planned') === 'planned').length === 0 && (
+                                <p className="text-center text-slate-500 text-xs py-4">Nenhum item na lista de desejos.</p>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     );
 }
