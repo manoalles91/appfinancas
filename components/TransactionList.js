@@ -7,6 +7,7 @@ import { ArrowUpRight, ArrowDownLeft, CreditCard, Trash2, ChevronDown, CheckCirc
 
 export default function TransactionList({ 
     transactions = [], 
+    cardsSummary = [],
     onDelete, 
     onEdit, 
     onTogglePaid, 
@@ -18,6 +19,8 @@ export default function TransactionList({
     selectedCardFilter,
     onClearCardFilter,
     viewDate,
+    selectedFaturaFilter,
+    onSelectFatura,
     onPayInvoice,
     variaveis = []
 }) {
@@ -25,6 +28,8 @@ export default function TransactionList({
     const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum | Filhos
     const [showAllPending, setShowAllPending] = useState(false);
     const [showAllPaid, setShowAllPaid] = useState(false);
+    const [showAllPendingIncome, setShowAllPendingIncome] = useState(false);
+    const [showAllPaidIncome, setShowAllPaidIncome] = useState(false);
     const [adjustFor, setAdjustFor] = useState(null);
     const [adjustValue, setAdjustValue] = useState('');
 
@@ -60,15 +65,26 @@ export default function TransactionList({
             });
         }
 
+        if (selectedFaturaFilter) {
+            list = list.filter(t => {
+                if (!t || !t.date) return false;
+                const d = new Date(t.date);
+                const matchesFaturaMonth = d.getMonth() === selectedFaturaFilter.month;
+                const matchesFaturaYear = d.getFullYear() === selectedFaturaFilter.year;
+                const matchesFaturaCard = t.card_name === selectedFaturaFilter.cardNome;
+                return matchesFaturaMonth && matchesFaturaYear && matchesFaturaCard;
+            });
+        }
+
         return list;
-    }, [transactions, filter, spenderFilter, selectedCardFilter, viewDate]);
+    }, [transactions, filter, spenderFilter, selectedCardFilter, viewDate, selectedFaturaFilter, onSelectFatura]);
 
     const pendingList = useMemo(() => filteredTransactions.filter(t => !t.pago), [filteredTransactions]);
     const paidList = useMemo(() => filteredTransactions.filter(t => t.pago), [filteredTransactions]);
 
     const isVariavel = (t) => t && t.fixa && Array.isArray(variaveis) && variaveis.includes(t.description);
 
-    const consolidateCards = (list) => {
+    const consolidateCards = (list, isPaidContext = false) => {
         const cards = {};
         const rest = [];
         list.forEach(t => {
@@ -78,26 +94,76 @@ export default function TransactionList({
                 rest.push(t);
             }
         });
-        return [
-            ...rest,
-            ...Object.entries(cards).map(([cardName, items]) => ({
+
+        const cardRows = Object.entries(cards).map(([cardName, items]) => {
+            const cardInfo = (cardsSummary || []).find(c => c && c.nome === cardName);
+            const sumItems = items.reduce((a, t) => a + Number(t.amount || 0), 0);
+            const amount = cardInfo && cardInfo.isAjustada ? Number(cardInfo.faturaAtual || 0) : sumItems;
+            const allPaid = cardInfo ? !!cardInfo.isPaga : items.every(t => t.pago);
+            const isAjustada = !!(cardInfo && cardInfo.isAjustada);
+
+            return {
                 __cardRow: true,
                 id: 'card|' + cardName,
                 card_name: cardName,
                 items,
-                amount: items.reduce((a, t) => a + Number(t.amount || 0), 0),
-                allPaid: items.every(t => t.pago),
-            })),
-        ];
+                amount,
+                allPaid,
+                isAjustada,
+            };
+        });
+
+        // Adiciona cartões cadastrados sem compras no mês mas com fatura ajustada
+        if ((filter === 'all' || filter === 'credit') && !selectedCardFilter && spenderFilter === 'all') {
+            (cardsSummary || []).forEach(c => {
+                if (c && c.faturaAtual > 0 && !cards[c.nome]) {
+                    const matchPaid = isPaidContext ? c.isPaga : !c.isPaga;
+                    if (matchPaid) {
+                        cardRows.push({
+                            __cardRow: true,
+                            id: 'card|' + c.nome,
+                            card_name: c.nome,
+                            items: [],
+                            amount: Number(c.faturaAtual || 0),
+                            allPaid: !!c.isPaga,
+                            isAjustada: !!c.isAjustada,
+                        });
+                    }
+                }
+            });
+        }
+
+        return [...rest, ...cardRows];
     };
 
-    const pendingDisplay = useMemo(() => consolidateCards(pendingList), [pendingList]);
-    const paidDisplay = useMemo(() => consolidateCards(paidList), [paidList]);
+    const sum = (list) => (list || []).reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
-    const sum = (list) => list.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
-    const pendingTotal = sum(pendingList);
-    const paidTotal = sum(paidList);
-    const grandTotal = pendingTotal + paidTotal;
+    const pendingExpenses = useMemo(() => pendingList.filter(t => t.type !== 'income'), [pendingList]);
+    const paidExpenses = useMemo(() => paidList.filter(t => t.type !== 'income'), [paidList]);
+
+    const pendingIncome = useMemo(() => pendingList.filter(t => t.type === 'income'), [pendingList]);
+    const paidIncome = useMemo(() => paidList.filter(t => t.type === 'income'), [paidList]);
+
+    const pendingExpenseDisplay = useMemo(() => consolidateCards(pendingExpenses, false), [pendingExpenses, cardsSummary, filter, selectedCardFilter, spenderFilter]);
+    const paidExpenseDisplay = useMemo(() => consolidateCards(paidExpenses, true), [paidExpenses, cardsSummary, filter, selectedCardFilter, spenderFilter]);
+
+    const pendingIncomeDisplay = useMemo(() => pendingIncome, [pendingIncome]);
+    const paidIncomeDisplay = useMemo(() => paidIncome, [paidIncome]);
+
+    const isIncomeFilter = filter === 'income';
+    const isExpenseOrCredit = filter === 'expense' || filter === 'credit';
+
+    const pendingExpenseTotal = useMemo(() => sum(pendingExpenseDisplay), [pendingExpenseDisplay]);
+    const paidExpenseTotal = useMemo(() => sum(paidExpenseDisplay), [paidExpenseDisplay]);
+    const pendingIncomeTotal = useMemo(() => sum(pendingIncomeDisplay), [pendingIncomeDisplay]);
+    const paidIncomeTotal = useMemo(() => sum(paidIncomeDisplay), [paidIncomeDisplay]);
+
+    const grandTotal = isIncomeFilter 
+        ? (pendingIncomeTotal + paidIncomeTotal)
+        : isExpenseOrCredit
+            ? (pendingExpenseTotal + paidExpenseTotal)
+            : (pendingExpenseTotal + paidExpenseTotal);
+    const paidTotal = isIncomeFilter ? paidIncomeTotal : paidExpenseTotal;
     const paidRatio = grandTotal > 0 ? Math.round((paidTotal / grandTotal) * 100) : 0;
 
     const showPending = statusFilter === 'all' || statusFilter === 'pending';
@@ -184,11 +250,18 @@ export default function TransactionList({
                             )}
                         </button>
                         <div className="min-w-0">
-                            <p className="text-sm font-bold text-purple-300 truncate flex items-center gap-1.5">
+                            <p className="text-sm font-bold text-purple-300 truncate flex items-center gap-1.5 flex-wrap">
                                 <CreditCard className="h-3.5 w-3.5" /> Fatura {t.card_name}
+                                {t.isAjustada && (
+                                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                        AJUSTADA
+                                    </span>
+                                )}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                                {t.items.length} {t.items.length === 1 ? 'compra' : 'compras'} no mês
+                                {t.items.length > 0 
+                                    ? `${t.items.length} ${t.items.length === 1 ? 'compra' : 'compras'} no mês` 
+                                    : 'Fatura ajustada no cartão'}
                             </p>
                         </div>
                     </div>
@@ -367,16 +440,58 @@ export default function TransactionList({
 
                 <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">⏳ A Pagar</p>
-                            <p className="text-lg font-bold text-amber-300 leading-tight">{formatCurrency(pendingTotal)}</p>
-                            <p className="text-[10px] text-amber-400/70">{pendingList.length} {pendingList.length === 1 ? 'item' : 'itens'}</p>
-                        </div>
-                        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">✅ Pagas</p>
-                            <p className="text-lg font-bold text-emerald-300 leading-tight">{formatCurrency(paidTotal)}</p>
-                            <p className="text-[10px] text-emerald-400/70">{paidList.length} {paidList.length === 1 ? 'item' : 'itens'}</p>
-                        </div>
+                        {isIncomeFilter ? (
+                            <>
+                                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">⏳ A Receber</p>
+                                    <p className="text-lg font-bold text-emerald-300 leading-tight">{formatCurrency(pendingIncomeTotal)}</p>
+                                    <p className="text-[10px] text-emerald-400/70">
+                                        {pendingIncomeDisplay.length} {pendingIncomeDisplay.length === 1 ? 'item' : 'itens'}
+                                    </p>
+                                </div>
+                                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">✅ Recebidas</p>
+                                    <p className="text-lg font-bold text-emerald-300 leading-tight">{formatCurrency(paidIncomeTotal)}</p>
+                                    <p className="text-[10px] text-emerald-400/70">
+                                        {paidIncomeDisplay.length} {paidIncomeDisplay.length === 1 ? 'item' : 'itens'}
+                                    </p>
+                                </div>
+                            </>
+                        ) : isExpenseOrCredit ? (
+                            <>
+                                <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3">
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">⏳ A Pagar</p>
+                                    <p className="text-lg font-bold text-amber-300 leading-tight">{formatCurrency(pendingExpenseTotal)}</p>
+                                    <p className="text-[10px] text-amber-400/70">
+                                        {pendingExpenseDisplay.length} {pendingExpenseDisplay.length === 1 ? 'item' : 'itens'}
+                                    </p>
+                                </div>
+                                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">✅ Pagas</p>
+                                    <p className="text-lg font-bold text-emerald-300 leading-tight">{formatCurrency(paidExpenseTotal)}</p>
+                                    <p className="text-[10px] text-emerald-400/70">
+                                        {paidExpenseDisplay.length} {paidExpenseDisplay.length === 1 ? 'item' : 'itens'}
+                                    </p>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3">
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">⏳ A Pagar (Despesas)</p>
+                                    <p className="text-lg font-bold text-amber-300 leading-tight">{formatCurrency(pendingExpenseTotal)}</p>
+                                    <p className="text-[10px] text-amber-400/70">
+                                        {pendingExpenseDisplay.length} {pendingExpenseDisplay.length === 1 ? 'item' : 'itens'}
+                                    </p>
+                                </div>
+                                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">💰 A Receber (Receitas)</p>
+                                    <p className="text-lg font-bold text-emerald-300 leading-tight">{formatCurrency(pendingIncomeTotal)}</p>
+                                    <p className="text-[10px] text-emerald-400/70">
+                                        {pendingIncomeDisplay.length} {pendingIncomeDisplay.length === 1 ? 'item' : 'itens'}
+                                    </p>
+                                </div>
+                            </>
+                        )}
                     </div>
                     <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
                         <div
@@ -403,8 +518,8 @@ export default function TransactionList({
                     <div className="flex gap-2 p-1 rounded-xl bg-slate-900/50 border border-slate-800">
                         {[
                             { value: 'all', label: `📄 Todas (${filteredTransactions.length})` },
-                            { value: 'pending', label: `⏳ A Pagar (${pendingList.length})` },
-                            { value: 'paid', label: `✅ Pagas (${paidList.length})` }
+                            { value: 'pending', label: isIncomeFilter ? `⏳ A Receber (${pendingIncomeDisplay.length})` : filter === 'all' ? `⏳ Pendentes (${pendingExpenseDisplay.length + pendingIncomeDisplay.length})` : `⏳ A Pagar (${pendingExpenseDisplay.length})` },
+                            { value: 'paid', label: isIncomeFilter ? `✅ Recebidas (${paidIncomeDisplay.length})` : filter === 'all' ? `✅ Concluídas (${paidExpenseDisplay.length + paidIncomeDisplay.length})` : `✅ Pagas (${paidExpenseDisplay.length})` }
                         ].map((s) => (
                             <button
                                 key={s.value}
@@ -491,9 +606,119 @@ export default function TransactionList({
                     </div>
                 )}
                 <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
-                    {showPending && renderSection('A Pagar', '⏳', displayedPending, pendingTotal, pendingDisplay.length, showAllPending, setShowAllPending, 'text-amber-400', 'text-amber-300', false)}
-                    {showPaid && renderSection('Pagas', '✅', displayedPaid, paidTotal, paidDisplay.length, showAllPaid, setShowAllPaid, 'text-emerald-400', 'text-emerald-300', false)}
-                    {pendingDisplay.length === 0 && paidDisplay.length === 0 && (
+                    {showPending && (
+                        filter === 'all' ? (
+                            <>
+                                {pendingIncomeDisplay.length > 0 && renderSection(
+                                    'A Receber', 
+                                    '💰', 
+                                    showAllPendingIncome ? pendingIncomeDisplay : pendingIncomeDisplay.slice(0, 15), 
+                                    pendingIncomeTotal, 
+                                    pendingIncomeDisplay.length, 
+                                    showAllPendingIncome, 
+                                    setShowAllPendingIncome, 
+                                    'text-emerald-400', 
+                                    'text-emerald-300', 
+                                    false
+                                )}
+                                {pendingExpenseDisplay.length > 0 && renderSection(
+                                    'A Pagar', 
+                                    '⏳', 
+                                    showAllPending ? pendingExpenseDisplay : pendingExpenseDisplay.slice(0, 15), 
+                                    pendingExpenseTotal, 
+                                    pendingExpenseDisplay.length, 
+                                    showAllPending, 
+                                    setShowAllPending, 
+                                    'text-amber-400', 
+                                    'text-amber-300', 
+                                    false
+                                )}
+                            </>
+                        ) : isIncomeFilter ? (
+                            renderSection(
+                                'A Receber', 
+                                '💰', 
+                                showAllPendingIncome ? pendingIncomeDisplay : pendingIncomeDisplay.slice(0, 15), 
+                                pendingIncomeTotal, 
+                                pendingIncomeDisplay.length, 
+                                showAllPendingIncome, 
+                                setShowAllPendingIncome, 
+                                'text-emerald-400', 
+                                'text-emerald-300', 
+                                false
+                            )
+                        ) : (
+                            renderSection(
+                                'A Pagar', 
+                                '⏳', 
+                                showAllPending ? pendingExpenseDisplay : pendingExpenseDisplay.slice(0, 15), 
+                                pendingExpenseTotal, 
+                                pendingExpenseDisplay.length, 
+                                showAllPending, 
+                                setShowAllPending, 
+                                'text-amber-400', 
+                                'text-amber-300', 
+                                false
+                            )
+                        )
+                    )}
+                    {showPaid && (
+                        filter === 'all' ? (
+                            <>
+                                {paidIncomeDisplay.length > 0 && renderSection(
+                                    'Recebidas', 
+                                    '✅', 
+                                    showAllPaidIncome ? paidIncomeDisplay : paidIncomeDisplay.slice(0, 15), 
+                                    paidIncomeTotal, 
+                                    paidIncomeDisplay.length, 
+                                    showAllPaidIncome, 
+                                    setShowAllPaidIncome, 
+                                    'text-emerald-400', 
+                                    'text-emerald-300', 
+                                    false
+                                )}
+                                {paidExpenseDisplay.length > 0 && renderSection(
+                                    'Pagas', 
+                                    '✅', 
+                                    showAllPaid ? paidExpenseDisplay : paidExpenseDisplay.slice(0, 15), 
+                                    paidExpenseTotal, 
+                                    paidExpenseDisplay.length, 
+                                    showAllPaid, 
+                                    setShowAllPaid, 
+                                    'text-slate-400', 
+                                    'text-slate-300', 
+                                    false
+                                )}
+                            </>
+                        ) : isIncomeFilter ? (
+                            renderSection(
+                                'Recebidas', 
+                                '✅', 
+                                showAllPaidIncome ? paidIncomeDisplay : paidIncomeDisplay.slice(0, 15), 
+                                paidIncomeTotal, 
+                                paidIncomeDisplay.length, 
+                                showAllPaidIncome, 
+                                setShowAllPaidIncome, 
+                                'text-emerald-400', 
+                                'text-emerald-300', 
+                                false
+                            )
+                        ) : (
+                            renderSection(
+                                'Pagas', 
+                                '✅', 
+                                showAllPaid ? paidExpenseDisplay : paidExpenseDisplay.slice(0, 15), 
+                                paidExpenseTotal, 
+                                paidExpenseDisplay.length, 
+                                showAllPaid, 
+                                setShowAllPaid, 
+                                'text-slate-400', 
+                                'text-slate-300', 
+                                false
+                            )
+                        )
+                    )}
+                    {pendingExpenseDisplay.length === 0 && pendingIncomeDisplay.length === 0 && paidExpenseDisplay.length === 0 && paidIncomeDisplay.length === 0 && (
                         <p className="text-center text-muted-foreground text-sm py-8">Nenhuma transação encontrada.</p>
                     )}
                 </div>

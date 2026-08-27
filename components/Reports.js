@@ -46,8 +46,14 @@ const CustomTooltip = ({ active, payload, label }) => {
     return null;
 };
 
-export default function Reports({ transactions = [] }) {
+export default function Reports({ transactions = [], viewDate }) {
     const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
+
+    const targetDate = useMemo(() => {
+        if (viewDate) return new Date(viewDate);
+        if (txs.length > 0 && txs[0].date) return new Date(txs[0].date);
+        return new Date();
+    }, [viewDate, txs]);
 
     const summary = useMemo(() => {
         const today = new Date();
@@ -65,7 +71,8 @@ export default function Reports({ transactions = [] }) {
             if (t.pago) {
                 efetivadas += amt;
             } else {
-                const d = new Date(t.date + 'T00:00:00');
+                const dateStr = (t.date || '').slice(0, 10);
+                const d = new Date(dateStr ? dateStr + 'T00:00:00' : 0);
                 if (d < today) {
                     vencidas += amt;
                 } else if (d <= limitDate) {
@@ -115,8 +122,9 @@ export default function Reports({ transactions = [] }) {
     }, [txs]);
 
     const projectionData = useMemo(() => {
-        const now = new Date();
-        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const targetYear = targetDate.getFullYear();
+        const targetMonth = targetDate.getMonth();
+        const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
         const data = [];
         let runningBalance = 0;
 
@@ -125,7 +133,7 @@ export default function Reports({ transactions = [] }) {
         sorted.forEach(t => {
             if (!t || !t.date) return;
             const d = new Date(t.date);
-            if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+            if (d.getMonth() === targetMonth && d.getFullYear() === targetYear) {
                 const day = d.getDate();
                 if (!byDay[day]) byDay[day] = 0;
                 byDay[day] += (t.type === 'income' ? (t.amount || 0) : -(t.amount || 0));
@@ -138,7 +146,7 @@ export default function Reports({ transactions = [] }) {
         }
 
         return data;
-    }, [txs]);
+    }, [txs, targetDate]);
 
     return (
         <div className="space-y-6">

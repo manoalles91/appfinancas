@@ -77,7 +77,17 @@ export default function Home() {
 
   const getAjustesFaturas = () => {
     try {
+      if (typeof window === 'undefined') return {};
       return JSON.parse(localStorage.getItem('fincasal_ajustes_faturas')) || {};
+    } catch {
+      return {};
+    }
+  };
+
+  const getFaturasPagas = () => {
+    try {
+      if (typeof window === 'undefined') return {};
+      return JSON.parse(localStorage.getItem('fincasal_faturas_pagas')) || {};
     } catch {
       return {};
     }
@@ -276,10 +286,12 @@ export default function Home() {
     const viewMonth = viewDate.getMonth();
     const viewYear = viewDate.getFullYear();
     const ajustes = getAjustesFaturas();
+    const faturasPagas = getFaturasPagas();
     const monthKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
 
     return cartoes.map(card => {
       const matches = transactions.filter(t => {
+        if (!t || !t.date) return false;
         const d = new Date(t.date);
         return t.card_name === card.nome &&
                t.type === 'credit' &&
@@ -292,7 +304,10 @@ export default function Home() {
       const ajustado = ajustes[key];
       const faturaAtual = ajustado != null ? Number(ajustado) : soma;
       const isAjustada = ajustado != null;
-      const isPaga = matches.length > 0 && matches.every(t => t.pago);
+      const manualPaidStatus = faturasPagas[key];
+      const isPaga = typeof manualPaidStatus === 'boolean'
+        ? manualPaidStatus
+        : (matches.length > 0 && matches.every(t => t.pago));
       const limite = Number(card.limite || 0);
 
       return {
@@ -1021,6 +1036,8 @@ export default function Home() {
             <Dashboard
               transactions={monthTransactions}
               allTransactions={transactions}
+              cardsSummary={cardsSummary}
+              cartoes={cartoes}
               partner1={partner1}
               partner2={partner2}
               onAddMany={handleBulkAdd}
@@ -1096,6 +1113,7 @@ export default function Home() {
                   />
                   <TransactionList
                     transactions={monthTransactions}
+                    cardsSummary={cardsSummary}
                     onDelete={setTxToDelete}
                     onEdit={openEditTransaction}
                     onTogglePaid={handleTogglePaid}

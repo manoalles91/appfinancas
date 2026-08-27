@@ -23,6 +23,8 @@ const formatDate = (dateString) => {
 export default function Dashboard({ 
     transactions = [], 
     allTransactions = [], 
+    cardsSummary = [],
+    cartoes = [],
     partner1 = 'Alle', 
     partner2 = 'Kelly', 
     onAddMany, 
@@ -43,62 +45,78 @@ export default function Dashboard({
     });
 
     const summary = useMemo(() => {
-        const income = txs
-            .filter((t) => t && t.type === 'income')
-            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        // 1. Receitas do mês
+        const incomeTxs = txs.filter((t) => t && t.type === 'income');
+        const income = incomeTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const incomePaid = incomeTxs.filter((t) => t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const incomePending = incomeTxs.filter((t) => !t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        const checkingPaidExpenses = txs
-            .filter((t) => t && t.payment_method === 'checking' && (t.type === 'expense' || t.type === 'credit') && t.pago)
-            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        // 2. Identificação de compras de cartão de crédito
+        const registeredCardNames = new Set((cartoes || []).map((c) => c && c.nome).filter(Boolean));
+        const isCreditTx = (t) => t && (t.type === 'credit' || t.payment_method === 'credit' || (t.card_name && registeredCardNames.has(t.card_name)));
 
-        const balance = income - checkingPaidExpenses;
+        // 3. Despesas de Conta / Dinheiro / Débito / PIX (exclui compras de cartão registradas)
+        const checkingExpensesTxs = txs.filter((t) => t && t.type === 'expense' && !isCreditTx(t));
+        const checkingTotal = checkingExpensesTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const checkingPaid = checkingExpensesTxs.filter((t) => t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const checkingPending = checkingExpensesTxs.filter((t) => !t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        const creditExpenses = txs
-            .filter((t) => t && t.payment_method === 'credit')
-            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        // 4. Faturas de Cartões de Crédito (utiliza cardsSummary com valores reais/ajustados e status de pagamento)
+        const cardsList = Array.isArray(cardsSummary) ? cardsSummary : [];
+        const creditExpenses = cardsList.reduce((acc, c) => acc + Number(c.faturaAtual || 0), 0);
+        const creditPaid = cardsList.filter((c) => c.isPaga).reduce((acc, c) => acc + Number(c.faturaAtual || 0), 0);
+        const creditPending = cardsList.filter((c) => !c.isPaga).reduce((acc, c) => acc + Number(c.faturaAtual || 0), 0);
 
-        const fixedTotal = txs
-            .filter((t) => t && t.fixa)
-            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        // Se houver transações de cartão que não pertençam a nenhum cartão cadastrado em cardsSummary:
+        const orphanCreditTxs = txs.filter((t) => isCreditTx(t) && !cardsList.some((c) => c.nome === t.card_name));
+        const orphanCreditTotal = orphanCreditTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const orphanCreditPaid = orphanCreditTxs.filter((t) => t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const orphanCreditPending = orphanCreditTxs.filter((t) => !t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        const fixedPaid = txs
-            .filter((t) => t && t.fixa && t.pago)
-            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const totalCreditInvoices = creditExpenses + orphanCreditTotal;
+        const totalCreditPaid = creditPaid + orphanCreditPaid;
+        const totalCreditPending = creditPending + orphanCreditPending;
 
-        return { income, balance, creditExpenses, fixedTotal, fixedPaid };
-    }, [txs]);
+        // 5. Totais consolidados de despesas
+        const totalExpenses = checkingTotal + totalCreditInvoices;
+        const totalPaidExpenses = checkingPaid + totalCreditPaid;
+        const totalPendingExpenses = checkingPending + totalCreditPending;
+
+        // 6. Contas fixas do mês
+        const fixedTxs = txs.filter((t) => t && t.fixa && t.type !== 'income');
+        const fixedTotal = fixedTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const fixedPaid = fixedTxs.filter((t) => t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        return {
+            income,
+            incomePaid,
+            incomePending,
+            checkingTotal,
+            checkingPaid,
+            checkingPending,
+            creditExpenses: totalCreditInvoices,
+            creditPaid: totalCreditPaid,
+            creditPending: totalCreditPending,
+            totalExpenses,
+            totalPaidExpenses,
+            totalPendingExpenses,
+            fixedTotal,
+            fixedPaid,
+        };
+    }, [txs, cardsSummary, cartoes]);
 
     const financeSummary = useMemo(() => {
-        const now = new Date();
-        const v = viewDate ? new Date(viewDate) : new Date();
-        const startM = now.getFullYear() * 12 + now.getMonth();
-        const endM = v.getFullYear() * 12 + v.getMonth();
-        const fromM = Math.min(startM, endM);
-        const toM = Math.max(startM, endM);
-        let pendingIncome = 0;
-        let pendingExpense = 0;
-
-        allTxs.forEach((t) => {
-            if (!t || !t.date) return;
-            const d = new Date(t.date);
-            if (isNaN(d.getTime())) return;
-            const m = d.getFullYear() * 12 + d.getMonth();
-            if (m < fromM || m > toM) return;
-            const amt = Number(t.amount || 0);
-            if (t.type === 'income') {
-                if (!t.pago) pendingIncome += amt;
-            } else if (t.type === 'expense' || t.type === 'credit') {
-                if (!t.pago) pendingExpense += amt;
-            }
-        });
+        const pendingIncome = summary.incomePending;
+        const pendingExpense = summary.totalPendingExpenses;
+        const previsto = manualSaldo + pendingIncome - pendingExpense;
 
         return {
             saldoAtual: manualSaldo,
-            previsto: manualSaldo + pendingIncome - pendingExpense,
+            previsto,
             pendingIncome,
             pendingExpense,
         };
-    }, [allTxs, manualSaldo, viewDate]);
+    }, [summary, manualSaldo]);
 
     const dueExpenses = useMemo(() => {
         const today = new Date();
@@ -111,7 +129,7 @@ export default function Dashboard({
 
         allTxs.forEach((t) => {
             if (!t || t.pago || (t.type !== 'expense' && t.type !== 'credit') || !t.date) return;
-            const d = new Date(t.date + 'T00:00:00');
+            const d = new Date(t.date.slice(0, 10) + 'T00:00:00');
             if (isNaN(d.getTime())) return;
             const diff = Math.floor((d - today) / 86400000);
             if (diff < 0) vencidas.push({ ...t, _days: Math.abs(diff) });
@@ -133,24 +151,26 @@ export default function Dashboard({
     }, [allTxs]);
 
     const coupleSummary = useMemo(() => {
+        const isExpense = (t) => t && (t.type === 'expense' || t.type === 'credit');
+
         const p1Personal = txs
-            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Eu')
+            .filter((t) => isExpense(t) && t.quem === 'Eu')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
         const p2Personal = txs
-            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Outro')
+            .filter((t) => isExpense(t) && t.quem === 'Outro')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
         const commonTotal = txs
-            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem && t.quem.startsWith('Comum'))
+            .filter((t) => isExpense(t) && t.quem && t.quem.startsWith('Comum'))
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
         const p1CommonPaid = txs
-            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Comum - Eu')
+            .filter((t) => isExpense(t) && t.quem === 'Comum - Eu')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
         const p2CommonPaid = txs
-            .filter((t) => t && (t.type === 'expense' || t.type === 'credit') && t.quem === 'Comum - Outro')
+            .filter((t) => isExpense(t) && t.quem === 'Comum - Outro')
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
         let debtMessage = '';
@@ -217,17 +237,23 @@ export default function Dashboard({
                             </p>
                         </div>
                     </div>
+                <div className="relative mt-6 pt-4 border-t border-slate-800 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-400">
+                    <span>
+                        Receitas do mês: <strong className="text-emerald-400">+{formatCurrency(summary.income)}</strong>
+                    </span>
+                    <span>
+                        Contas em Conta/PIX: <strong className="text-slate-300">{formatCurrency(summary.checkingTotal)}</strong>
+                    </span>
+                    <span>
+                        Fatura cartões: <strong className="text-purple-400">{formatCurrency(summary.creditExpenses)}</strong>
+                    </span>
+                    <span>
+                        Total Despesas: <strong className="text-red-400">-{formatCurrency(summary.totalExpenses)}</strong>
+                    </span>
+                    <span>
+                        Total a pagar no mês: <strong className="text-amber-400">-{formatCurrency(summary.totalPendingExpenses)}</strong>
+                    </span>
                 </div>
-                <div className="relative mt-6 pt-4 border-t border-slate-800 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
-                    <span>
-                        Receitas do mês <strong className="text-emerald-400">+{formatCurrency(summary.income)}</strong>
-                    </span>
-                    <span>
-                        Despesas pagas no mês <strong className="text-red-400">-{formatCurrency(summary.income - summary.balance)}</strong>
-                    </span>
-                    <span>
-                        Fatura cartões <strong className="text-purple-400">{formatCurrency(summary.creditExpenses)}</strong>
-                    </span>
                 </div>
             </div>
 

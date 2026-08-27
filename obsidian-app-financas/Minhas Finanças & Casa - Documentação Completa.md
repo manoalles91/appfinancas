@@ -1,6 +1,6 @@
 # 🏡 Minhas Finanças & Central da Casa — Documentação Completa
 
-> **Versão:** 2.0 (Hub da Família & Finanças)  
+> **Versão:** 2.1 (Hub da Família & Finanças)  
 > **Usuários:** Alle, Kelly & Filhos  
 > **Stack:** Next.js (App Router) • React • Tailwind/Vanilla CSS • Supabase (PostgreSQL) • LocalStorage (Offline-First)  
 > **Última Atualização:** 24/08/2026
@@ -18,9 +18,10 @@
    - [3. 🛒 Desejos & Compras Planejadas](#3--desejos--compras-planejadas)
    - [4. ✅ Tarefas da Casa & Rotinas](#4--tarefas-da-casa--rotinas)
    - [5. ⚙️ Configurações](#5-️-configurações)
-5. [Estrutura do Banco de Dados (Supabase)](#-estrutura-do-banco-de-dados-supabase)
-6. [Regras de Negócio & Lógicas Especiais](#-regras-de-negócio--lógicas-especiais)
-7. [Guia de Execução & Comandos](#-guia-de-execução--comandos)
+5. [Gerenciamento Inteligente de Exclusão (Fixas e Parceladas)](#-gerenciamento-inteligente-de-exclusão)
+6. [Estrutura do Banco de Dados (Supabase)](#-estrutura-do-banco-de-dados-supabase)
+7. [Regras de Negócio & Lógicas Especiais](#-regras-de-negócio--lógicas-especiais)
+8. [Guia de Execução & Comandos](#-guia-de-execução--comandos)
 
 ---
 
@@ -147,6 +148,19 @@ Checklist minimalista e ágil focado na rotina da casa.
 * **Nomes do Casal:** Personalização dos nomes (padrão: *Alle* e *Kelly*) sincronizados automaticamente na nuvem.
 * **Editor de Categorias:** Personalização de grupos, categorias e subitens.
 * **Zona de Perigo:** Reset controlado de transações com confirmação de segurança.
+
+---
+
+## 🗑️ Gerenciamento Inteligente de Exclusão
+
+Ao clicar na lixeira de qualquer despesa ou receita recorrente/parcelada, o sistema abre um modal com 3 opções claras:
+
+1. **1. Excluir somente este mês:**
+   * Apaga exclusivamente o registro do mês selecionado. O histórico passado e os meses futuros permanecem intactos.
+2. **2. Excluir deste mês em diante:**
+   * Preserva todo o histórico anterior e remove/cancela os meses futuros a partir da data atual.
+3. **3. Excluir TODAS as ocorrências (Série Completa):**
+   * Exclui todas as ocorrências passadas e futuras daquela despesa ou receita no banco de dados.
 
 ---
 
