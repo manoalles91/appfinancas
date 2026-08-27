@@ -273,11 +273,12 @@ export default function Home() {
   }, [fetchData]);
 
   const monthTransactions = useMemo(() => {
+    const viewMonth = viewDate.getMonth();
+    const viewYear = viewDate.getFullYear();
     return transactions.filter(t => {
+      if (!t || !t.date) return false;
       const d = new Date(t.date);
-      const isCurrentMonth = d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
-      const isPendingExpense = !t.pago && t.type === 'expense';
-      return isCurrentMonth || isPendingExpense;
+      return d.getMonth() === viewMonth && d.getFullYear() === viewYear;
     });
   }, [transactions, viewDate]);
 

@@ -169,9 +169,6 @@ export default function TransactionList({
     const showPending = statusFilter === 'all' || statusFilter === 'pending';
     const showPaid = statusFilter === 'all' || statusFilter === 'paid';
 
-    const displayedPending = showAllPending ? pendingDisplay : pendingDisplay.slice(0, 15);
-    const displayedPaid = showAllPaid ? paidDisplay : paidDisplay.slice(0, 15);
-
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('pt-BR', {
             style: 'currency',
