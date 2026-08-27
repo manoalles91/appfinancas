@@ -11,11 +11,13 @@ import CSVManager from '@/components/CSVManager';
 import CategoriesEditor from '@/components/CategoriesEditor';
 import Wishlist from '@/components/Wishlist';
 import HouseTasks from '@/components/HouseTasks';
+import AppLock from '@/components/AppLock';
 import { useToast } from '@/components/ui/toast';
-import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal, ShoppingBag, CheckSquare, Calendar, FastForward } from 'lucide-react';
+import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal, ShoppingBag, CheckSquare, Calendar, FastForward, Lock, Unlock, KeyRound, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getCategories, getGroupId } from '@/lib/categories';
 import { loadCloudSettings, saveCloudSetting } from '@/lib/cloudSettings';
+import { hashPin, verifyPin } from '@/lib/security';
 import { Card, CardContent } from '@/components/ui/card';
 
 const TABS = [
@@ -55,6 +57,19 @@ export default function Home() {
   const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
   const [selectedCardFilter, setSelectedCardFilter] = useState(null);
   const [expandedPurchases, setExpandedPurchases] = useState(null);
+
+  // Estados de Segurança / PIN Lock
+  const [pinHash, setPinHash] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('fincasal_pin_hash') || '' : ''));
+  const [isLocked, setIsLocked] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const hash = localStorage.getItem('fincasal_pin_hash');
+    const sessionUnlocked = sessionStorage.getItem('fincasal_unlocked');
+    return !!hash && sessionUnlocked !== 'true';
+  });
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinModalMode, setPinModalMode] = useState('create'); // 'create' | 'change' | 'remove'
+  const [pinForm, setPinForm] = useState({ currentPin: '', newPin: '', confirmNewPin: '' });
+  const [pinFormError, setPinFormError] = useState('');
 
   const variaveis = useMemo(() => {
     void transactions;
@@ -160,9 +175,85 @@ export default function Home() {
         setTasks(s.tasks);
         try { localStorage.setItem('fincasal_tasks', JSON.stringify(s.tasks)); } catch {}
       }
+      if (typeof s.app_pin_hash === 'string') {
+        setPinHash(s.app_pin_hash);
+        try { localStorage.setItem('fincasal_pin_hash', s.app_pin_hash); } catch {}
+        if (s.app_pin_hash && sessionStorage.getItem('fincasal_unlocked') !== 'true') {
+          setIsLocked(true);
+        } else if (!s.app_pin_hash) {
+          setIsLocked(false);
+        }
+      }
     })();
     return () => { active = false; };
   }, []);
+
+  // Handlers para Segurança / PIN Lock
+  const handleUnlock = useCallback(() => {
+    setIsLocked(false);
+    try { sessionStorage.setItem('fincasal_unlocked', 'true'); } catch {}
+    toast('Aplicativo desbloqueado com sucesso!');
+  }, [toast]);
+
+  const handleLockNow = useCallback(() => {
+    setIsLocked(true);
+    try { sessionStorage.removeItem('fincasal_unlocked'); } catch {}
+    toast('Aplicativo bloqueado.');
+  }, [toast]);
+
+  const openPinModal = (mode) => {
+    setPinModalMode(mode);
+    setPinForm({ currentPin: '', newPin: '', confirmNewPin: '' });
+    setPinFormError('');
+    setIsPinModalOpen(true);
+  };
+
+  const handleSavePinModal = async (e) => {
+    e.preventDefault();
+    setPinFormError('');
+
+    if (pinHash && (pinModalMode === 'change' || pinModalMode === 'remove')) {
+      const isValid = await verifyPin(pinForm.currentPin, pinHash);
+      if (!isValid) {
+        setPinFormError('O PIN atual informado está incorreto.');
+        return;
+      }
+    }
+
+    if (pinModalMode === 'remove') {
+      setPinHash('');
+      setIsLocked(false);
+      try {
+        localStorage.removeItem('fincasal_pin_hash');
+        sessionStorage.removeItem('fincasal_unlocked');
+      } catch {}
+      await saveCloudSetting('app_pin_hash', '');
+      setIsPinModalOpen(false);
+      toast('Senha de acesso removida.');
+      return;
+    }
+
+    const cleanPin = String(pinForm.newPin).trim();
+    if (cleanPin.length < 4 || cleanPin.length > 8) {
+      setPinFormError('O novo PIN deve ter entre 4 e 8 dígitos numéricos.');
+      return;
+    }
+
+    if (cleanPin !== String(pinForm.confirmNewPin).trim()) {
+      setPinFormError('A confirmação do PIN não confere.');
+      return;
+    }
+
+    const newHash = await hashPin(cleanPin);
+    setPinHash(newHash);
+    try {
+      localStorage.setItem('fincasal_pin_hash', newHash);
+      sessionStorage.setItem('fincasal_unlocked', 'true');
+    } catch {}
+    await saveCloudSetting('app_pin_hash', newHash);
+    setIsPinModalOpen(false);
+    toast(pinModalMode === 'create' ? 'Senha de acesso configurada com sucesso!' : 'PIN alterado com sucesso!');
+  };
 
   // Handlers para Lista de Desejos
   const handleAddWishlist = useCallback(async (item) => {
@@ -993,6 +1084,16 @@ export default function Home() {
                 >
                   <Settings className="h-4 w-4" />
                 </button>
+                {pinHash && (
+                  <button
+                    onClick={handleLockNow}
+                    className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg border border-indigo-500/30 hover:border-indigo-500/50 transition-all text-indigo-300 hover:text-white cursor-pointer flex items-center gap-1 text-xs font-bold"
+                    title="Bloquear aplicativo agora"
+                  >
+                    <Lock className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Bloquear</span>
+                  </button>
+                )}
               </div>
               <p className="text-slate-400 font-medium text-sm">Controle da Casa ({partner1}, {partner2} & Filhos)</p>
             </div>
@@ -1389,6 +1490,61 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-xs text-slate-500">Os nomes são salvos automaticamente e sincronizados entre os aparelhos.</p>
+              </CardContent>
+            </Card>
+
+            {/* Configuração de Senha & Segurança */}
+            <Card className="animate-slide-up border-indigo-500/20 bg-gradient-to-br from-[#1e293b] to-[#172033]">
+              <CardContent className="p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <KeyRound className="h-5 w-5 text-indigo-400" /> Senha & Bloqueio do App
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Proteja o acesso aos dados financeiros e tarefas da casa com um PIN de segurança.
+                    </p>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-black border ${
+                    pinHash
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}>
+                    {pinHash ? '🔒 Protegido com PIN' : '🔓 Sem Senha'}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  {!pinHash ? (
+                    <button
+                      onClick={() => openPinModal('create')}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-lg shadow-indigo-500/25"
+                    >
+                      <Lock className="h-4 w-4" /> Criar Senha de Acesso
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => openPinModal('change')}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <KeyRound className="h-4 w-4" /> Alterar Senha
+                      </button>
+                      <button
+                        onClick={() => openPinModal('remove')}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Unlock className="h-4 w-4" /> Remover Senha
+                      </button>
+                      <button
+                        onClick={handleLockNow}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700 cursor-pointer sm:ml-auto"
+                      >
+                        <Lock className="h-4 w-4 text-indigo-400" /> Bloquear Agora
+                      </button>
+                    </>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -2139,6 +2295,140 @@ export default function Home() {
         onConfirm={confirmDeleteCard}
         onCancel={() => setCardToDelete(null)}
       />
+
+      {/* Modal de Configuração / Alteração de PIN */}
+      {isPinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1e293b] border border-indigo-500/30 w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-6 animate-scale-in text-white">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  <KeyRound className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">
+                    {pinModalMode === 'create' && 'Criar Senha do App'}
+                    {pinModalMode === 'change' && 'Alterar Senha do App'}
+                    {pinModalMode === 'remove' && 'Remover Senha do App'}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {pinModalMode === 'remove'
+                      ? 'Digite sua senha atual para desativar o bloqueio'
+                      : 'Defina um PIN numérico de 4 a 8 dígitos'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPinModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePinModal} className="space-y-4">
+              {/* Se já existe PIN e está alterando ou removendo, pede o PIN atual */}
+              {pinHash && (pinModalMode === 'change' || pinModalMode === 'remove') && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    PIN Atual
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={8}
+                    placeholder="Digite seu PIN atual"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-center text-lg font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                    value={pinForm.currentPin}
+                    onChange={(e) => setPinForm({ ...pinForm, currentPin: e.target.value.replace(/\D/g, '') })}
+                    required
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {/* Campos para Novo PIN (apenas nos modos 'create' e 'change') */}
+              {pinModalMode !== 'remove' && (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Novo PIN (4 a 8 dígitos)
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={8}
+                      placeholder="Ex: 1234"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-center text-lg font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                      value={pinForm.newPin}
+                      onChange={(e) => setPinForm({ ...pinForm, newPin: e.target.value.replace(/\D/g, '') })}
+                      required
+                      autoFocus={!pinHash}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Confirmar Novo PIN
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={8}
+                      placeholder="Digite o mesmo PIN novamente"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-center text-lg font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                      value={pinForm.confirmNewPin}
+                      onChange={(e) => setPinForm({ ...pinForm, confirmNewPin: e.target.value.replace(/\D/g, '') })}
+                      required
+                    />
+                  </div>
+                </>
+              )}
+
+              {pinFormError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 font-bold text-center animate-fade-in">
+                  {pinFormError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPinModalOpen(false)}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all border border-slate-700 text-xs cursor-pointer"
+                >
+                  CANCELAR
+                </button>
+                <button
+                  type="submit"
+                  className={`flex-1 py-3 font-bold rounded-xl transition-all text-xs cursor-pointer shadow-lg ${
+                    pinModalMode === 'remove'
+                      ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-500/20'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'
+                  }`}
+                >
+                  {pinModalMode === 'create' && 'SALVAR PIN'}
+                  {pinModalMode === 'change' && 'ATUALIZAR PIN'}
+                  {pinModalMode === 'remove' && 'REMOVER SENHA'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tela de Bloqueio por Senha (AppLock) */}
+      {isLocked && pinHash && (
+        <AppLock
+          pinHash={pinHash}
+          onUnlock={handleUnlock}
+          partner1={partner1}
+          partner2={partner2}
+        />
+      )}
     </main>
   );
 }
