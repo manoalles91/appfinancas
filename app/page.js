@@ -1179,117 +1179,82 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0e1a] text-slate-100 p-3 sm:p-5 md:p-8 pb-28 md:pb-12">
-      <div className="mx-auto max-w-7xl space-y-6 sm:space-y-8">
-        {/* HEADER MODERNO MOBILE-FIRST */}
-        <header className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-white/10">
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30">
-                <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
-              </div>
-              <div className="flex flex-col">
-                <h1 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-white leading-tight">
-                  Minhas Finanças & Casa
-                </h1>
-                <p className="text-slate-400 font-medium text-xs sm:text-sm">
-                  {partner1} & {partner2} • Família
-                </p>
-              </div>
+    <main className="min-h-screen bg-[#0a0e1a] text-slate-100 p-2.5 sm:p-5 md:p-8 pb-20 md:pb-12">
+      <div className="mx-auto max-w-7xl space-y-3.5 sm:space-y-6">
+        {/* HEADER COMPACTO MOBILE & DESKTOP */}
+        <header className="flex items-center justify-between gap-2 pb-2.5 sm:pb-4 border-b border-white/10">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-8 w-8 sm:h-11 sm:w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white shadow-md shadow-indigo-500/20 shrink-0">
+              <Sparkles className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
-
-            {/* Mobile Header Quick Actions (Lock, Privacy, Settings) */}
-            <div className="flex items-center gap-1.5 sm:hidden">
-              <button
-                onClick={togglePrivacy}
-                aria-label="Alternar modo privacidade"
-                className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                  isPrivate
-                    ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/40'
-                    : 'bg-white/5 text-slate-400 border-white/10 hover:text-white'
-                }`}
-                title={isPrivate ? "Mostrar valores" : "Ocultar valores"}
-              >
-                {isPrivate ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-              {pinHash && (
-                <button
-                  onClick={handleLockNow}
-                  aria-label="Bloquear aplicativo"
-                  className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-xl border border-indigo-500/30 text-indigo-300 cursor-pointer"
-                  title="Bloquear agora"
-                >
-                  <Lock className="h-4 w-4" />
-                </button>
-              )}
-              <button
-                onClick={() => setActiveTab('config')}
-                aria-label="Configurações"
-                className="p-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white cursor-pointer"
-                title="Configurações"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-xl md:text-2xl font-black tracking-tight text-white leading-tight truncate">
+                Minhas Finanças & Casa
+              </h1>
+              <p className="text-slate-400 font-medium text-[10px] sm:text-xs truncate">
+                {partner1} & {partner2} • Família
+              </p>
             </div>
           </div>
 
-          {/* Desktop / Tablet Controls Cluster */}
-          <div className="flex items-center justify-between w-full sm:w-auto gap-2 sm:gap-3">
+          {/* Controls Cluster: Seletor de Mês & Ações */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Seletor de Mês Compacto */}
-            <div className="flex items-center gap-2 bg-[#121827] px-2 py-1.5 rounded-2xl border border-white/10 shadow-md">
+            <div className="flex items-center gap-1 bg-[#121827] px-1.5 py-1 rounded-xl border border-white/10">
               <button
                 onClick={() => changeMonth(-1)}
-                className="p-1.5 hover:bg-white/10 rounded-xl transition-colors text-slate-400 hover:text-white cursor-pointer active:scale-90"
+                className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white cursor-pointer active:scale-90"
                 title="Mês anterior"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="text-xs sm:text-sm font-black w-28 sm:w-32 text-center text-white uppercase tracking-wider truncate">
+              <span className="text-[11px] sm:text-xs font-black w-18 sm:w-28 text-center text-white uppercase tracking-wider truncate">
                 {monthLabel}
               </span>
               <button
                 onClick={() => changeMonth(1)}
-                className="p-1.5 hover:bg-white/10 rounded-xl transition-colors text-slate-400 hover:text-white cursor-pointer active:scale-90"
+                className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white cursor-pointer active:scale-90"
                 title="Próximo mês"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            {/* Desktop Actions */}
-            <div className="hidden sm:flex items-center gap-2">
+            {/* Privacy Eye */}
+            <button
+              onClick={togglePrivacy}
+              aria-label="Alternar modo privacidade"
+              className={`p-1.5 sm:p-2 rounded-xl border transition-all cursor-pointer active:scale-95 ${
+                isPrivate
+                  ? 'bg-indigo-600/25 text-indigo-300 border-indigo-500/40'
+                  : 'bg-white/5 text-slate-400 border-white/10 hover:text-white'
+              }`}
+              title={isPrivate ? "Mostrar valores" : "Ocultar valores"}
+            >
+              {isPrivate ? <EyeOff className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
+            </button>
+
+            {/* Lock PIN (if configured) */}
+            {pinHash && (
               <button
-                onClick={togglePrivacy}
-                aria-label="Alternar modo privacidade"
-                className={`p-2.5 rounded-xl border transition-all cursor-pointer active:scale-95 ${
-                  isPrivate
-                    ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/40 shadow-sm'
-                    : 'bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10'
-                }`}
-                title={isPrivate ? "Mostrar valores" : "Ocultar valores (Privacidade)"}
+                onClick={handleLockNow}
+                aria-label="Bloquear aplicativo"
+                className="p-1.5 sm:p-2 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-xl border border-indigo-500/30 text-indigo-300 cursor-pointer"
+                title="Bloquear agora"
               >
-                {isPrivate ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                <Lock className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </button>
-              {pinHash && (
-                <button
-                  onClick={handleLockNow}
-                  aria-label="Bloquear aplicativo agora"
-                  className="p-2.5 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-xl border border-indigo-500/30 text-indigo-300 hover:text-white transition-all cursor-pointer flex items-center gap-1 text-xs font-bold active:scale-95"
-                  title="Bloquear aplicativo agora"
-                >
-                  <Lock className="h-4 w-4" />
-                  <span>Bloquear</span>
-                </button>
-              )}
-              <button
-                onClick={() => setActiveTab('config')}
-                aria-label="Abrir configurações"
-                className="p-2.5 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white transition-all cursor-pointer active:scale-95"
-                title="Configurações da Casa e Família"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
-            </div>
+            )}
+
+            {/* Settings */}
+            <button
+              onClick={() => setActiveTab('config')}
+              aria-label="Configurações"
+              className="p-1.5 sm:p-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white cursor-pointer"
+              title="Configurações"
+            >
+              <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </button>
           </div>
         </header>
 

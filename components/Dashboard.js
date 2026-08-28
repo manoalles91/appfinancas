@@ -9,10 +9,7 @@ import {
     CheckSquare, 
     ShoppingBag, 
     ArrowRight, 
-    PlusCircle, 
     CreditCard, 
-    TrendingUp, 
-    TrendingDown, 
     ArrowUpRight, 
     ArrowDownLeft, 
     Sparkles, 
@@ -50,29 +47,24 @@ export default function Dashboard({
     });
 
     const summary = useMemo(() => {
-        // 1. Receitas do mês
         const incomeTxs = txs.filter((t) => t && t.type === 'income');
         const income = incomeTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const incomePaid = incomeTxs.filter((t) => t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const incomePending = incomeTxs.filter((t) => !t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        // 2. Identificação de compras de cartão de crédito
         const registeredCardNames = new Set((cartoes || []).map((c) => c && c.nome).filter(Boolean));
         const isCreditTx = (t) => t && (t.type === 'credit' || t.payment_method === 'credit' || (t.card_name && registeredCardNames.has(t.card_name)));
 
-        // 3. Despesas de Conta / Dinheiro / Débito / PIX (exclui compras de cartão registradas)
         const checkingExpensesTxs = txs.filter((t) => t && t.type === 'expense' && !isCreditTx(t));
         const checkingTotal = checkingExpensesTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const checkingPaid = checkingExpensesTxs.filter((t) => t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const checkingPending = checkingExpensesTxs.filter((t) => !t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        // 4. Faturas de Cartões de Crédito
         const cardsList = Array.isArray(cardsSummary) ? cardsSummary : [];
         const creditExpenses = cardsList.reduce((acc, c) => acc + Number(c.faturaAtual || 0), 0);
         const creditPaid = cardsList.filter((c) => c.isPaga).reduce((acc, c) => acc + Number(c.faturaAtual || 0), 0);
         const creditPending = cardsList.filter((c) => !c.isPaga).reduce((acc, c) => acc + Number(c.faturaAtual || 0), 0);
 
-        // Se houver transações de cartão não cadastradas:
         const orphanCreditTxs = txs.filter((t) => isCreditTx(t) && !cardsList.some((c) => c.nome === t.card_name));
         const orphanCreditTotal = orphanCreditTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const orphanCreditPaid = orphanCreditTxs.filter((t) => t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -82,12 +74,10 @@ export default function Dashboard({
         const totalCreditPaid = creditPaid + orphanCreditPaid;
         const totalCreditPending = creditPending + orphanCreditPending;
 
-        // 5. Totais consolidados de despesas
         const totalExpenses = checkingTotal + totalCreditInvoices;
         const totalPaidExpenses = checkingPaid + totalCreditPaid;
         const totalPendingExpenses = checkingPending + totalCreditPending;
 
-        // 6. Contas fixas do mês
         const fixedTxs = txs.filter((t) => t && t.fixa && t.type !== 'income');
         const fixedTotal = fixedTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const fixedPaid = fixedTxs.filter((t) => t.pago).reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -144,14 +134,15 @@ export default function Dashboard({
         vencidas.sort((a, b) => b._days - a._days);
         proximas.sort((a, b) => a._days - b._days);
 
-        const sum = (list) => list.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const totalVencidas = vencidas.reduce((a, t) => a + Number(t.amount || 0), 0);
+        const totalProximas = proximas.reduce((a, t) => a + Number(t.amount || 0), 0);
 
         return {
             vencidas,
             proximas,
-            totalVencidas: sum(vencidas),
-            totalProximas: sum(proximas),
-            totalGeral: sum(vencidas) + sum(proximas),
+            totalVencidas,
+            totalProximas,
+            totalGeral: totalVencidas + totalProximas,
         };
     }, [allTxs]);
 
@@ -187,14 +178,14 @@ export default function Dashboard({
             debtAmount = (p1CommonPaid - p2CommonPaid) / 2;
             debtor = partner2;
             creditor = partner1;
-            debtMessage = `${partner2} deve transferir ${formatCurrency(debtAmount)} para ${partner1}`;
+            debtMessage = `${partner2} deve pagar ${formatCurrency(debtAmount)} a ${partner1}`;
         } else if (p2CommonPaid > p1CommonPaid) {
             debtAmount = (p2CommonPaid - p1CommonPaid) / 2;
             debtor = partner1;
             creditor = partner2;
-            debtMessage = `${partner1} deve transferir ${formatCurrency(debtAmount)} para ${partner2}`;
+            debtMessage = `${partner1} deve pagar ${formatCurrency(debtAmount)} a ${partner2}`;
         } else {
-            debtMessage = 'Despesas comuns equilibradas!';
+            debtMessage = 'Contas compartilhadas equilibradas!';
         }
 
         const totalPersonal = p1Personal + p2Personal;
@@ -222,21 +213,17 @@ export default function Dashboard({
     const currentMonthLabel = (viewDate ? new Date(viewDate) : new Date()).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
     return (
-        <div className="space-y-6 animate-fade-in">
-            {/* HERO CARD FINTECH */}
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#131b2e] via-[#0f172a] to-[#0a0e1a] p-5 sm:p-7 shadow-2xl">
-                {/* Background Glow Orbs */}
-                <div className="absolute -top-20 -right-20 h-60 w-60 rounded-full bg-indigo-500/15 blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-20 -left-20 h-60 w-60 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
-
-                <div className="relative space-y-6">
+        <div className="space-y-4 sm:space-y-6 animate-fade-in">
+            {/* HERO CARD COMPACTO */}
+            <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-gradient-to-br from-[#131b2e] via-[#0f172a] to-[#0a0e1a] p-3.5 sm:p-5 shadow-xl">
+                <div className="relative space-y-3.5 sm:space-y-4">
                     {/* Partner Balances Row */}
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                                Contas da Família
+                            <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-400">
+                                Saldos em Conta
                             </span>
-                            <span className="text-[11px] text-slate-500">Sincronizado na nuvem</span>
+                            <span className="text-[9px] sm:text-[10px] text-slate-500">Nuvem ativa</span>
                         </div>
                         <Balances
                             partner1={partner1}
@@ -247,81 +234,76 @@ export default function Dashboard({
                     </div>
 
                     {/* Main Totals: Saldo Atual vs Previsto */}
-                    <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t border-white/10">
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4 pt-2 border-t border-white/10">
                         {/* Saldo Total Consolidado */}
-                        <div className="space-y-1">
-                            <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                                Saldo Total Atual ({partner1} + {partner2})
+                        <div className="space-y-0.5">
+                            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                Saldo Atual
                             </p>
-                            <p className={`text-3xl sm:text-4xl font-black tracking-tight ${financeSummary.saldoAtual >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            <p className={`text-lg sm:text-2xl font-black tracking-tight truncate ${financeSummary.saldoAtual >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                 {displayAmount(financeSummary.saldoAtual)}
                             </p>
-                            <p className="text-xs text-slate-400">Disponível em contas hoje</p>
                         </div>
 
                         {/* Previsto Fim do Mês */}
-                        <div className="space-y-1 sm:border-l sm:border-white/10 sm:pl-6">
-                            <p className="text-[11px] font-black uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
-                                <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-                                Projeção Fim de {currentMonthLabel}
+                        <div className="space-y-0.5 border-l border-white/10 pl-2.5 sm:pl-4">
+                            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-indigo-300 flex items-center gap-1">
+                                <Sparkles className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-indigo-400" />
+                                Previsto ({currentMonthLabel.slice(0, 3)})
                             </p>
-                            <p className={`text-3xl sm:text-4xl font-black tracking-tight ${financeSummary.previsto >= 0 ? 'text-indigo-300' : 'text-rose-400'}`}>
+                            <p className={`text-lg sm:text-2xl font-black tracking-tight truncate ${financeSummary.previsto >= 0 ? 'text-indigo-300' : 'text-rose-400'}`}>
                                 {displayAmount(financeSummary.previsto)}
-                            </p>
-                            <p className="text-xs text-slate-400">
-                                +<span className="text-emerald-400 font-bold">{displayAmount(financeSummary.pendingIncome)}</span> a receber &nbsp;•&nbsp; 
-                                -<span className="text-rose-400 font-bold">{displayAmount(financeSummary.pendingExpense)}</span> a pagar
                             </p>
                         </div>
                     </div>
 
-                    {/* Financial Summary Badges */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-white/10 text-xs">
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2.5">
-                            <span className="text-[10px] text-emerald-400 uppercase font-black block">Receitas do Mês</span>
-                            <span className="text-sm font-bold text-white">+{displayAmount(summary.income)}</span>
+                    {/* Financial Summary Badges (Compact 4-Pill Grid) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-2 border-t border-white/10">
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2">
+                            <span className="text-[9px] text-emerald-400 uppercase font-black block truncate">Receitas</span>
+                            <span className="text-xs sm:text-sm font-bold text-white block truncate">+{displayAmount(summary.income)}</span>
                         </div>
-                        <div className="bg-slate-800/60 border border-white/10 rounded-xl p-2.5">
-                            <span className="text-[10px] text-slate-400 uppercase font-black block">Contas em Débito/PIX</span>
-                            <span className="text-sm font-bold text-slate-200">{displayAmount(summary.checkingTotal)}</span>
+                        <div className="bg-slate-800/60 border border-white/10 rounded-xl p-2">
+                            <span className="text-[9px] text-slate-400 uppercase font-black block truncate">Débito/PIX</span>
+                            <span className="text-xs sm:text-sm font-bold text-slate-200 block truncate">{displayAmount(summary.checkingTotal)}</span>
                         </div>
-                        <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-2.5">
-                            <span className="text-[10px] text-purple-400 uppercase font-black block">Faturas de Cartão</span>
-                            <span className="text-sm font-bold text-purple-300">{displayAmount(summary.creditExpenses)}</span>
+                        <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-2">
+                            <span className="text-[9px] text-purple-400 uppercase font-black block truncate">Faturas Cartão</span>
+                            <span className="text-xs sm:text-sm font-bold text-purple-300 block truncate">{displayAmount(summary.creditExpenses)}</span>
                         </div>
-                        <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-2.5">
-                            <span className="text-[10px] text-rose-400 uppercase font-black block">Total Despesas</span>
-                            <span className="text-sm font-bold text-rose-300">-{displayAmount(summary.totalExpenses)}</span>
+                        <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-2">
+                            <span className="text-[9px] text-rose-400 uppercase font-black block truncate">Total Despesas</span>
+                            <span className="text-xs sm:text-sm font-bold text-rose-300 block truncate">-{displayAmount(summary.totalExpenses)}</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* QUICK ACTIONS ROW */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            {/* QUICK ACTIONS ROW (Scrollable Pills) */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
                 {onOpenAddTransaction && (
                     <>
                         <button
                             onClick={() => onOpenAddTransaction('expense')}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 rounded-2xl text-xs font-black transition-all cursor-pointer shrink-0 active:scale-95 shadow-sm"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
                         >
-                            <ArrowDownLeft className="h-4 w-4 text-rose-400" />
-                            + Nova Despesa
+                            <ArrowDownLeft className="h-3.5 w-3.5 text-rose-400" />
+                            <span>+ Despesa</span>
                         </button>
                         <button
                             onClick={() => onOpenAddTransaction('income')}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-2xl text-xs font-black transition-all cursor-pointer shrink-0 active:scale-95 shadow-sm"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
                         >
-                            <ArrowUpRight className="h-4 w-4 text-emerald-400" />
-                            + Nova Receita
+                            <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>+ Receita</span>
                         </button>
                         <button
                             onClick={() => onOpenAddTransaction('credit')}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 rounded-2xl text-xs font-black transition-all cursor-pointer shrink-0 active:scale-95 shadow-sm"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
                         >
-                            <CreditCard className="h-4 w-4 text-purple-400" />
-                            + Compra no Cartão
+                            <CreditCard className="h-3.5 w-3.5 text-purple-400" />
+                            <span>+ Cartão</span>
                         </button>
                     </>
                 )}
@@ -329,90 +311,75 @@ export default function Dashboard({
                     <>
                         <button
                             onClick={() => onNavigateTab('financas')}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 rounded-2xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
                         >
-                            <Layers className="h-4 w-4 text-indigo-400" />
-                            Ver Extrato
+                            <Layers className="h-3.5 w-3.5 text-indigo-400" />
+                            <span>Extrato</span>
                         </button>
                         <button
                             onClick={() => onNavigateTab('tarefas')}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 rounded-2xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
                         >
-                            <CheckSquare className="h-4 w-4 text-cyan-400" />
-                            Tarefas ({tasks.filter(t => !t.completed).length})
+                            <CheckSquare className="h-3.5 w-3.5 text-cyan-400" />
+                            <span>Tarefas ({tasks.filter(t => !t.completed).length})</span>
                         </button>
                     </>
                 )}
             </div>
 
-            {/* DESPESAS COM VENCIMENTO (VENCIDAS & PRÓXIMOS 7 DIAS) */}
+            {/* DESPESAS COM VENCIMENTO */}
             {(dueExpenses.totalVencidas > 0 || dueExpenses.totalProximas > 0) && (
-                <Card className="border-amber-500/25 bg-amber-950/10 backdrop-blur-xl shadow-xl overflow-hidden">
-                    <CardContent className="p-5 sm:p-6 space-y-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
-                            <div className="space-y-0.5">
-                                <h3 className="text-base sm:text-lg font-bold text-amber-400 flex items-center gap-2">
-                                    <CalendarClock className="h-5 w-5" /> Alertas de Vencimento
-                                </h3>
-                                <p className="text-xs text-slate-400">
-                                    {dueExpenses.totalVencidas > 0 && (
-                                        <span><strong className="text-rose-400">{displayAmount(dueExpenses.totalVencidas)}</strong> vencidas</span>
-                                    )}
-                                    {dueExpenses.totalVencidas > 0 && dueExpenses.totalProximas > 0 && ' • '}
-                                    {dueExpenses.totalProximas > 0 && (
-                                        <span><strong className="text-amber-400">{displayAmount(dueExpenses.totalProximas)}</strong> nos próximos 7 dias</span>
-                                    )}
-                                </p>
-                            </div>
-                            <span className="text-xs font-black uppercase text-slate-400 self-start sm:self-auto">
+                <Card className="border-amber-500/25 bg-amber-950/10 backdrop-blur-md overflow-hidden rounded-2xl">
+                    <CardContent className="p-3.5 sm:p-4 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                            <h3 className="text-xs sm:text-sm font-bold text-amber-400 flex items-center gap-1.5">
+                                <CalendarClock className="h-4 w-4" /> Alertas de Vencimento
+                            </h3>
+                            <span className="text-[10px] font-black uppercase text-slate-400">
                                 Total: {displayAmount(dueExpenses.totalGeral)}
                             </span>
                         </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="grid gap-2 sm:grid-cols-2">
                             {/* Vencidas */}
-                            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-3.5 space-y-2">
-                                <p className="text-[10px] font-black uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
-                                    <AlertCircle className="h-3.5 w-3.5" /> Vencidas ({dueExpenses.vencidas.length})
-                                </p>
-                                {dueExpenses.vencidas.length === 0 ? (
-                                    <p className="text-xs text-slate-500 py-1">Nenhuma conta atrasada. 🎉</p>
-                                ) : (
-                                    <div className="space-y-1.5">
-                                        {dueExpenses.vencidas.slice(0, 4).map((t) => (
-                                            <div key={t.id} className="flex items-center justify-between gap-2 bg-[#0a0e1a]/80 rounded-xl px-3 py-2 border border-white/5 text-xs">
+                            {dueExpenses.vencidas.length > 0 && (
+                                <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-2.5 space-y-1.5">
+                                    <p className="text-[9px] font-black uppercase tracking-wider text-rose-400 flex items-center gap-1">
+                                        <AlertCircle className="h-3 w-3" /> Vencidas ({dueExpenses.vencidas.length})
+                                    </p>
+                                    <div className="space-y-1">
+                                        {dueExpenses.vencidas.slice(0, 3).map((t) => (
+                                            <div key={t.id} className="flex items-center justify-between gap-2 bg-[#0a0e1a]/80 rounded-lg px-2.5 py-1.5 border border-white/5 text-xs">
                                                 <div className="min-w-0">
-                                                    <p className="font-semibold text-slate-200 truncate">{t.description}</p>
-                                                    <p className="text-[10px] text-rose-400/80">{formatDate(t.date)} • {t._days} dia(s) atrás</p>
+                                                    <p className="font-medium text-slate-200 truncate text-[11px]">{t.description}</p>
+                                                    <p className="text-[9px] text-rose-400/80">{formatDate(t.date)} • {t._days}d atrás</p>
                                                 </div>
-                                                <span className="font-black text-rose-400 shrink-0">{displayAmount(t.amount)}</span>
+                                                <span className="font-black text-rose-400 shrink-0 text-xs">{displayAmount(t.amount)}</span>
                                             </div>
                                         ))}
                                     </div>
-                                )}
-                            </div>
+                                </div>
+                            )}
 
                             {/* Próximos 7 Dias */}
-                            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3.5 space-y-2">
-                                <p className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                                    <CalendarDays className="h-3.5 w-3.5" /> A Vencer em Breve ({dueExpenses.proximas.length})
-                                </p>
-                                {dueExpenses.proximas.length === 0 ? (
-                                    <p className="text-xs text-slate-500 py-1">Tudo em dia para a semana.</p>
-                                ) : (
-                                    <div className="space-y-1.5">
-                                        {dueExpenses.proximas.slice(0, 4).map((t) => (
-                                            <div key={t.id} className="flex items-center justify-between gap-2 bg-[#0a0e1a]/80 rounded-xl px-3 py-2 border border-white/5 text-xs">
+                            {dueExpenses.proximas.length > 0 && (
+                                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-2.5 space-y-1.5">
+                                    <p className="text-[9px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1">
+                                        <CalendarDays className="h-3 w-3" /> Vencendo ({dueExpenses.proximas.length})
+                                    </p>
+                                    <div className="space-y-1">
+                                        {dueExpenses.proximas.slice(0, 3).map((t) => (
+                                            <div key={t.id} className="flex items-center justify-between gap-2 bg-[#0a0e1a]/80 rounded-lg px-2.5 py-1.5 border border-white/5 text-xs">
                                                 <div className="min-w-0">
-                                                    <p className="font-semibold text-slate-200 truncate">{t.description}</p>
-                                                    <p className="text-[10px] text-amber-400/80">{formatDate(t.date)} • {t._days === 0 ? 'Vence hoje' : `em ${t._days} dia(s)`}</p>
+                                                    <p className="font-medium text-slate-200 truncate text-[11px]">{t.description}</p>
+                                                    <p className="text-[9px] text-amber-400/80">{formatDate(t.date)} • {t._days === 0 ? 'Hoje' : `em ${t._days}d`}</p>
                                                 </div>
-                                                <span className="font-black text-amber-400 shrink-0">{displayAmount(t.amount)}</span>
+                                                <span className="font-black text-amber-400 shrink-0 text-xs">{displayAmount(t.amount)}</span>
                                             </div>
                                         ))}
                                     </div>
-                                )}
-                            </div>
+                                </div>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
@@ -427,26 +394,22 @@ export default function Dashboard({
 
             {/* COMPROMISSOS FIXOS DO MÊS */}
             {summary.fixedTotal > 0 && (
-                <Card className="border-blue-500/20 bg-blue-950/10 backdrop-blur-md">
-                    <CardContent className="p-5 sm:p-6">
-                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                            <div className="space-y-1">
-                                <h3 className="text-base sm:text-lg font-bold text-blue-400 flex items-center gap-2">
-                                    <Clock className="h-5 w-5" /> Contas Fixas do Mês
+                <Card className="border-blue-500/20 bg-blue-950/10 backdrop-blur-md rounded-2xl">
+                    <CardContent className="p-3.5 sm:p-4">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                            <div className="space-y-0.5">
+                                <h3 className="text-xs sm:text-sm font-bold text-blue-400 flex items-center gap-1.5">
+                                    <Clock className="h-4 w-4" /> Contas Fixas do Mês
                                 </h3>
-                                <p className="text-xs sm:text-sm text-slate-400">
-                                    Pago <span className="text-emerald-400 font-bold">{displayAmount(summary.fixedPaid)}</span> de um total de <span className="text-slate-200 font-bold">{displayAmount(summary.fixedTotal)}</span>.
+                                <p className="text-[11px] text-slate-400">
+                                    Pago <span className="text-emerald-400 font-bold">{displayAmount(summary.fixedPaid)}</span> de <span className="text-slate-200 font-bold">{displayAmount(summary.fixedTotal)}</span> ({Math.round((summary.fixedPaid / summary.fixedTotal) * 100)}%)
                                 </p>
                             </div>
 
-                            <div className="w-full md:w-1/3 space-y-1.5">
-                                <div className="flex justify-between text-[11px] font-black uppercase tracking-wider">
-                                    <span className="text-slate-400">Progresso</span>
-                                    <span className="text-blue-400">{Math.round((summary.fixedPaid / summary.fixedTotal) * 100)}%</span>
-                                </div>
-                                <div className="h-2.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/10">
+                            <div className="w-full sm:w-1/3">
+                                <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/10">
                                     <div
-                                        className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-1000"
+                                        className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-700"
                                         style={{ width: `${Math.min((summary.fixedPaid / summary.fixedTotal) * 100, 100)}%` }}
                                     />
                                 </div>
@@ -456,146 +419,97 @@ export default function Dashboard({
                 </Card>
             )}
 
-            {/* PAINEL DO CASAL */}
-            <Card className="border-indigo-500/20 bg-indigo-950/10 backdrop-blur-md">
-                <CardContent className="p-5 sm:p-6 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
-                        <div className="space-y-0.5">
-                            <h3 className="text-base sm:text-lg font-bold text-indigo-300">
-                                Painel do Casal ({partner1} & {partner2})
-                            </h3>
-                            <p className="text-xs text-slate-400">Divisão e acerto de contas compartilhadas</p>
-                        </div>
-                        <div className="flex items-center gap-2 bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs font-bold self-start sm:self-auto">
-                            <span>{coupleSummary.debtMessage}</span>
-                        </div>
+            {/* PAINEL DO CASAL (Compact 3-Col Layout) */}
+            <Card className="border-indigo-500/20 bg-indigo-950/10 backdrop-blur-md rounded-2xl">
+                <CardContent className="p-3.5 sm:p-4 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-white/10 pb-2">
+                        <h3 className="text-xs sm:text-sm font-bold text-indigo-300">
+                            Divisão do Casal ({partner1} & {partner2})
+                        </h3>
+                        <p className="text-[10px] font-bold text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 rounded-lg self-start sm:self-auto">
+                            {coupleSummary.debtMessage}
+                        </p>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="bg-[#0a0e1a]/80 p-3.5 rounded-2xl border border-white/5 space-y-0.5">
-                            <p className="text-[10px] text-purple-400 uppercase font-black">Gastos de {partner1}</p>
-                            <p className="text-lg font-black text-white">{displayAmount(coupleSummary.p1Personal)}</p>
-                            <p className="text-[10px] text-slate-400">Exclusivos de {partner1}</p>
+                    <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5">
+                        <div className="bg-[#0a0e1a]/80 p-2 sm:p-3 rounded-xl border border-white/5 space-y-0.5">
+                            <p className="text-[8px] sm:text-[9px] text-purple-400 uppercase font-black truncate">Só {partner1}</p>
+                            <p className="text-xs sm:text-base font-black text-white truncate">{displayAmount(coupleSummary.p1Personal)}</p>
                         </div>
-                        <div className="bg-[#0a0e1a]/80 p-3.5 rounded-2xl border border-white/5 space-y-0.5">
-                            <p className="text-[10px] text-rose-400 uppercase font-black">Gastos de {partner2}</p>
-                            <p className="text-lg font-black text-white">{displayAmount(coupleSummary.p2Personal)}</p>
-                            <p className="text-[10px] text-slate-400">Exclusivos de {partner2}</p>
+                        <div className="bg-[#0a0e1a]/80 p-2 sm:p-3 rounded-xl border border-white/5 space-y-0.5">
+                            <p className="text-[8px] sm:text-[9px] text-rose-400 uppercase font-black truncate">Só {partner2}</p>
+                            <p className="text-xs sm:text-base font-black text-white truncate">{displayAmount(coupleSummary.p2Personal)}</p>
                         </div>
-                        <div className="bg-[#0a0e1a]/80 p-3.5 rounded-2xl border border-white/5 space-y-0.5">
-                            <p className="text-[10px] text-teal-400 uppercase font-black">Despesas Comuns</p>
-                            <p className="text-lg font-black text-white">{displayAmount(coupleSummary.commonTotal)}</p>
-                            <div className="flex justify-between text-[10px] text-slate-400">
-                                <span>{partner1}: {displayAmount(coupleSummary.p1CommonPaid)}</span>
-                                <span>{partner2}: {displayAmount(coupleSummary.p2CommonPaid)}</span>
-                            </div>
+                        <div className="bg-[#0a0e1a]/80 p-2 sm:p-3 rounded-xl border border-white/5 space-y-0.5">
+                            <p className="text-[8px] sm:text-[9px] text-teal-400 uppercase font-black truncate">Comum</p>
+                            <p className="text-xs sm:text-base font-black text-white truncate">{displayAmount(coupleSummary.commonTotal)}</p>
                         </div>
                     </div>
-
-                    {(coupleSummary.p1Personal > 0 || coupleSummary.p2Personal > 0) && (
-                        <div className="space-y-1.5 pt-1">
-                            <div className="flex justify-between text-[11px] font-black uppercase">
-                                <span className="text-purple-400">{partner1} ({Math.round(coupleSummary.p1Percent)}%)</span>
-                                <span className="text-rose-400">{partner2} ({Math.round(coupleSummary.p2Percent)}%)</span>
-                            </div>
-                            <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden flex border border-white/10">
-                                <div
-                                    className="h-full bg-purple-500 transition-all duration-1000"
-                                    style={{ width: `${coupleSummary.p1Percent}%` }}
-                                />
-                                <div
-                                    className="h-full bg-rose-500 transition-all duration-1000"
-                                    style={{ width: `${coupleSummary.p2Percent}%` }}
-                                />
-                            </div>
-                        </div>
-                    )}
                 </CardContent>
             </Card>
 
             {/* MINI WIDGETS: TAREFAS & DESEJOS */}
-            <div className="grid gap-4 sm:grid-cols-2">
-                {/* Mini-Widget: Tarefas Pendentes */}
-                <Card className="bg-[#121827]/70 border-white/10 shadow-xl">
-                    <CardContent className="p-5 space-y-3">
+            <div className="grid gap-2.5 sm:grid-cols-2">
+                {/* Mini-Widget: Tarefas */}
+                <Card className="bg-[#121827]/70 border-white/10 rounded-2xl">
+                    <CardContent className="p-3.5 space-y-2">
                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                                <div className="h-8 w-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-                                    <CheckSquare className="h-4 w-4" />
-                                </div>
-                                <div>
-                                    <h4 className="text-sm font-bold text-white">Tarefas da Casa</h4>
-                                    <p className="text-[10px] text-slate-400">
-                                        {tasks.filter(t => !t.completed).length} pendentes
-                                    </p>
-                                </div>
+                            <div className="flex items-center gap-2">
+                                <CheckSquare className="h-4 w-4 text-cyan-400" />
+                                <h4 className="text-xs sm:text-sm font-bold text-white">Tarefas da Casa</h4>
+                                <span className="text-[10px] text-slate-400">({tasks.filter(t => !t.completed).length})</span>
                             </div>
                             {onNavigateTab && (
                                 <button
                                     onClick={() => onNavigateTab('tarefas')}
-                                    className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                                    className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 cursor-pointer"
                                 >
-                                    Ver todas <ArrowRight className="h-3 w-3" />
+                                    Ver <ArrowRight className="h-3 w-3" />
                                 </button>
                             )}
                         </div>
 
-                        <div className="space-y-1.5">
-                            {tasks.filter(t => !t.completed).slice(0, 3).map((task) => (
-                                <div key={task.id} className="flex items-center justify-between p-2.5 rounded-xl bg-[#0a0e1a]/80 border border-white/5 text-xs">
-                                    <span className="font-medium text-slate-200 truncate mr-2">{task.title}</span>
-                                    <span className="text-[9px] font-black uppercase text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-full shrink-0 border border-cyan-500/20">
+                        <div className="space-y-1">
+                            {tasks.filter(t => !t.completed).slice(0, 2).map((task) => (
+                                <div key={task.id} className="flex items-center justify-between p-2 rounded-lg bg-[#0a0e1a]/80 border border-white/5 text-xs">
+                                    <span className="font-medium text-slate-200 truncate text-[11px] mr-1">{task.title}</span>
+                                    <span className="text-[8px] font-black uppercase text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded shrink-0">
                                         {task.assigned_to || 'Casa'}
                                     </span>
                                 </div>
                             ))}
-                            {tasks.filter(t => !t.completed).length === 0 && (
-                                <p className="text-center text-slate-500 text-xs py-3">Tudo concluído! 🎉</p>
-                            )}
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Mini-Widget: Desejos & Compras Planejadas */}
-                <Card className="bg-[#121827]/70 border-white/10 shadow-xl">
-                    <CardContent className="p-5 space-y-3">
+                {/* Mini-Widget: Desejos */}
+                <Card className="bg-[#121827]/70 border-white/10 rounded-2xl">
+                    <CardContent className="p-3.5 space-y-2">
                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                                <div className="h-8 w-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                                    <ShoppingBag className="h-4 w-4" />
-                                </div>
-                                <div>
-                                    <h4 className="text-sm font-bold text-white">Desejos & Compras</h4>
-                                    <p className="text-[10px] text-slate-400">
-                                        {wishlist.filter(w => (w.status || 'planned') === 'planned').length} planejados
-                                    </p>
-                                </div>
+                            <div className="flex items-center gap-2">
+                                <ShoppingBag className="h-4 w-4 text-emerald-400" />
+                                <h4 className="text-xs sm:text-sm font-bold text-white">Desejos & Compras</h4>
+                                <span className="text-[10px] text-slate-400">({wishlist.filter(w => (w.status || 'planned') === 'planned').length})</span>
                             </div>
                             {onNavigateTab && (
                                 <button
                                     onClick={() => onNavigateTab('desejos')}
-                                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
+                                    className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 cursor-pointer"
                                 >
-                                    Ver lista <ArrowRight className="h-3 w-3" />
+                                    Ver <ArrowRight className="h-3 w-3" />
                                 </button>
                             )}
                         </div>
 
-                        <div className="space-y-1.5">
-                            {wishlist.filter(w => (w.status || 'planned') === 'planned').slice(0, 3).map((item) => (
-                                <div key={item.id} className="flex items-center justify-between p-2.5 rounded-xl bg-[#0a0e1a]/80 border border-white/5 text-xs">
-                                    <div className="min-w-0 flex-1 mr-2">
-                                        <p className="font-medium text-slate-200 truncate">{item.title}</p>
-                                        <p className="text-[10px] text-slate-400">{item.category || 'Geral'} • {item.target || 'Casa'}</p>
-                                    </div>
-                                    <span className="font-bold text-emerald-400 shrink-0">
+                        <div className="space-y-1">
+                            {wishlist.filter(w => (w.status || 'planned') === 'planned').slice(0, 2).map((item) => (
+                                <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-[#0a0e1a]/80 border border-white/5 text-xs">
+                                    <p className="font-medium text-slate-200 truncate text-[11px] mr-1">{item.title}</p>
+                                    <span className="font-bold text-emerald-400 shrink-0 text-[11px]">
                                         {item.price > 0 ? displayAmount(item.price) : 'R$ --'}
                                     </span>
                                 </div>
                             ))}
-                            {wishlist.filter(w => (w.status || 'planned') === 'planned').length === 0 && (
-                                <p className="text-center text-slate-500 text-xs py-3">Nenhum item na lista de desejos.</p>
-                            )}
                         </div>
                     </CardContent>
                 </Card>
