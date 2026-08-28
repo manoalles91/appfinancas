@@ -19,6 +19,7 @@ import {
     ArrowUpRight,
     Filter
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/format';
 
 const PRIORITIES = [
     { value: 'high', label: 'Alta (Urgente)', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30', badge: '🔴 Urgente' },
@@ -66,13 +67,6 @@ export default function Wishlist({
         notes: '',
         status: 'planned'
     });
-
-    const formatCurrency = (val) => {
-        return new Intl.NumberFormat('pt-BR', {
-            style: 'currency',
-            currency: 'BRL',
-        }).format(Number(val) || 0);
-    };
 
     const openAddModal = () => {
         setEditingItem(null);

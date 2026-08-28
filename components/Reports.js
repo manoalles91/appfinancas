@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useMemo } from 'react';
 import { CATEGORY_GROUPS, getGroupId, getCategories } from '@/lib/categories';
+import { formatCurrency } from '@/lib/format';
 
 const GROUP_COLORS = {
     essenciais: '#60a5fa',
@@ -24,13 +25,6 @@ const PIE_COLORS = [
     '#38bdf8', '#fbbf24', '#a78bfa', '#f87171',
     '#2dd4bf', '#c084fc', '#fb7185', '#4ade80',
 ];
-
-const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', {
-        style: 'currency',
-        currency: 'BRL',
-    }).format(value);
-};
 
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {

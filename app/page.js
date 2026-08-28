@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Dashboard from '@/components/Dashboard';
 import TransactionList from '@/components/TransactionList';
 import AddTransactionForm from '@/components/AddTransactionForm';
@@ -12,13 +12,17 @@ import CategoriesEditor from '@/components/CategoriesEditor';
 import Wishlist from '@/components/Wishlist';
 import HouseTasks from '@/components/HouseTasks';
 import AppLock from '@/components/AppLock';
+import AuditLogViewer from '@/components/AuditLogViewer';
 import { useToast } from '@/components/ui/toast';
-import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal, ShoppingBag, CheckSquare, Calendar, FastForward, Lock, Unlock, KeyRound, ShieldCheck } from 'lucide-react';
+import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal, ShoppingBag, CheckSquare, Calendar, FastForward, Lock, Unlock, KeyRound, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getCategories, getGroupId } from '@/lib/categories';
 import { loadCloudSettings, saveCloudSetting } from '@/lib/cloudSettings';
 import { hashPin, verifyPin } from '@/lib/security';
 import { Card, CardContent } from '@/components/ui/card';
+import { useSession, REQUIRE_AUTH, signOut } from '@/lib/auth';
+import AuthScreen from '@/components/AuthScreen';
+import { logAudit } from '@/lib/audit';
 
 const TABS = [
   { id: 'inicio', label: 'Início', icon: HomeIcon },
@@ -32,15 +36,38 @@ export default function Home() {
   const [transactions, setTransactions] = useState([]);
   const [cartoes, setCartoes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dataError, setDataError] = useState('');
+  const [online, setOnline] = useState(true);
   const [viewDate, setViewDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState('inicio');
   const [financeSubTab, setFinanceSubTab] = useState('transacoes'); // transacoes | cartoes | relatorios
   const [wishlist, setWishlist] = useState([]);
   const [tasks, setTasks] = useState([]);
   const { toast } = useToast();
+  const { user, loading: authLoading } = useSession();
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
 
   const [partner1, setPartner1] = useState('Alle');
   const [partner2, setPartner2] = useState('Kelly');
+
+  // Modo Privacidade (Ocultar Saldos) e Modal de Lançamento Rápido
+  const [isPrivate, setIsPrivate] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('fincasal_privacy') === 'true' : false));
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [quickAddType, setQuickAddType] = useState('expense');
+
+  const togglePrivacy = useCallback(() => {
+    setIsPrivate(prev => {
+      const next = !prev;
+      try { localStorage.setItem('fincasal_privacy', String(next)); } catch {}
+      toast(next ? 'Modo privacidade ativado (saldos ocultos)' : 'Modo privacidade desativado');
+      return next;
+    });
+  }, [toast]);
+
+  const handleOpenQuickAdd = useCallback((type = 'expense') => {
+    setQuickAddType(type);
+    setIsQuickAddOpen(true);
+  }, []);
 
   // States para edição e adição de cartão
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -85,6 +112,8 @@ export default function Home() {
   const [cardToDelete, setCardToDelete] = useState(null);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [resetConfirmInput, setResetConfirmInput] = useState('');
+  const [resetPin, setResetPin] = useState('');
+  const [pendingReset, setPendingReset] = useState(false);
 
   // States para reajuste manual de fatura por mês
   const [reajusteFatura, setReajusteFatura] = useState(null);
@@ -339,28 +368,79 @@ export default function Home() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const { data: txData, error: txError } = await supabase
-        .from('transactions')
-        .select('*')
-        .order('date', { ascending: false });
-      if (txError) throw txError;
-      setTransactions(txData || []);
-
-      const { data: cardsData, error: cardsError } = await supabase
-        .from('cartoes')
-        .select('*');
-      if (cardsError) throw cardsError;
-      setCartoes(cardsData || []);
+      setDataError('');
+      const [txRes, cardsRes] = await Promise.all([
+        supabase.from('transactions').select('*').order('date', { ascending: false }),
+        supabase.from('cartoes').select('*'),
+      ]);
+      const { data: txData, error: txError } = txRes;
+      const { data: cardsData, error: cardsError } = cardsRes;
+      if (txError) {
+        setDataError(txError.message);
+        console.error('Error fetching transactions:', txError.message);
+      } else {
+        setTransactions(txData || []);
+      }
+      if (cardsError) {
+        setDataError(prev => (prev ? `${prev} | ` : '') + cardsError.message);
+        console.error('Error fetching cartoes:', cardsError.message);
+      } else {
+        setCartoes(cardsData || []);
+      }
     } catch (error) {
       console.error('Error fetching data:', error.message);
-      toast('Erro ao carregar dados: ' + error.message, 'error');
+      setDataError(error.message || 'Falha ao carregar dados.');
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  // Notificação de despesas urgentes (vencidas ou vencendo em até 7 dias)
+  useEffect(() => {
+    if (loading) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const limitDate = new Date(today);
+    limitDate.setDate(today.getDate() + 7);
+    const urgent = transactions.filter(t => {
+      if (!t || t.pago || t.type !== 'expense' || !t.date) return false;
+      const td = new Date(String(t.date).slice(0, 10) + 'T00:00:00');
+      return td <= limitDate;
+    });
+    if (urgent.length === 0) return;
+    if (typeof window !== 'undefined' && sessionStorage.getItem('fincasal_urgent_notified')) return;
+    const total = urgent.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const msg = `Você tem ${urgent.length} despesa(s) urgente(s) no total de R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`;
+    if (typeof window !== 'undefined') { try { sessionStorage.setItem('fincasal_urgent_notified', '1'); } catch {} }
+    toast(msg, urgent.length >= 5 ? 'error' : 'info');
+  }, [loading, transactions, toast]);
+
+  // Detecção de conexão online/offline
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setOnline(navigator.onLine);
+    const onOnline = () => { setOnline(true); toast('Conexão restabelecida.'); fetchData(); };
+    const onOffline = () => { setOnline(false); toast('Sem conexão. Os dados podem estar desatualizados.', 'error'); };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, [fetchData, toast]);
+
+  // Tempo real: sincroniza mudanças feitas em outros dispositivos
+  useEffect(() => {
+    const channel = supabase
+      .channel('fincasal-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cartoes' }, () => fetchData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
   const monthTransactions = useMemo(() => {
@@ -583,6 +663,7 @@ export default function Home() {
       const { error } = await supabase.from('transactions').delete().eq('id', txToDelete);
       if (error) throw error;
       setTransactions(prev => prev.filter(t => t.id !== txToDelete));
+      await logAudit({ action: 'delete', entity: 'transaction', entityId: txToDelete, description: 'Transação excluída' });
       toast('Transação excluída.');
       setTxToDelete(null);
     } catch (error) {
@@ -593,6 +674,15 @@ export default function Home() {
 
   const handleResetAllTransactions = useCallback(async () => {
     try {
+      setPendingReset(false);
+      if (pinHash) {
+        const unlocked = await verifyPin(resetPin, pinHash);
+        if (!unlocked) {
+          toast('PIN incorreto. Operação cancelada.', 'error');
+          setPendingReset(false);
+          return;
+        }
+      }
       const { error } = await supabase
         .from('transactions')
         .delete()
@@ -601,12 +691,16 @@ export default function Home() {
       setTransactions([]);
       setIsResetModalOpen(false);
       setResetConfirmInput('');
+      setResetPin('');
+      await logAudit({ action: 'reset_all', entity: 'transaction', description: 'Todas as transações foram apagadas (reset)' });
       toast('Todas as transações foram apagadas.');
     } catch (error) {
       console.error('Error resetting transactions:', error.message);
       toast('Erro ao resetar transações: ' + error.message, 'error');
+    } finally {
+      setPendingReset(false);
     }
-  }, [toast]);
+  }, [toast, pinHash, resetPin]);
 
   const handlePayInvoice = useCallback(async (cardName, targetStatus) => {
     try {
@@ -683,6 +777,7 @@ export default function Home() {
         .eq('id', id);
       if (error) throw error;
       setTransactions(prev => prev.map(t => t.id === id ? { ...t, pago: newStatus } : t));
+      await logAudit({ action: newStatus ? 'mark_paid' : 'mark_unpaid', entity: 'transaction', entityId: id, description: newStatus ? 'Marcado como pago' : 'Marcado como não pago' });
 
       if (newStatus) {
         const t = transactions.find(x => x.id === id);
@@ -730,6 +825,7 @@ export default function Home() {
       if (error) throw error;
       setTransactions(prev => prev.map(t => t.id === id ? { ...t, amount } : t));
       toast('Valor ajustado para ' + amount.toFixed(2).replace('.', ','));
+      await logAudit({ action: 'adjust_amount', entity: 'transaction', entityId: id, description: `Valor ajustado para ${amount.toFixed(2)}` });
     } catch (error) {
       console.error('Error adjusting amount:', error.message);
       toast('Erro ao ajustar valor: ' + error.message, 'error');
@@ -942,6 +1038,14 @@ export default function Home() {
         if (upErr) throw upErr;
       }
 
+      await logAudit({
+        action: needsSplit ? 'split' : 'update',
+        entity: 'transaction',
+        entityId: editingTransaction.id,
+        description: (needsSplit ? `Dividido em ${parcTotal} parcelas` : `Atualizado`) + `: ${editingTransaction.description} (${base.toFixed(2)})`,
+        meta: { amount: base, installment_info, applyToAll: !!applyToAll },
+      });
+
       setTransactions(prev => {
         const rest = prev.map(t => {
           if (amountMap[t.id] != null) return { ...t, amount: amountMap[t.id] };
@@ -1051,6 +1155,14 @@ export default function Home() {
     );
   }
 
+  if (REQUIRE_AUTH && !user && !authLoading) {
+    return <AuthScreen />;
+  }
+
+  if (showAuthScreen && !REQUIRE_AUTH) {
+    return <AuthScreen onClose={() => setShowAuthScreen(false)} />;
+  }
+
   const monthName = viewDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
@@ -1067,74 +1179,158 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0f172a] text-slate-200 p-4 md:p-6 lg:p-8 pb-28 md:pb-10">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <header className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-slate-800">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/10 border border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.1)]">
-              <Sparkles className="h-6 w-6 text-indigo-400" />
-            </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">Minhas Finanças & Casa</h1>
-                <button
-                  onClick={() => setActiveTab('config')}
-                  className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 hover:border-slate-600 transition-all text-slate-400 hover:text-white cursor-pointer"
-                  title="Configurações da Casa e Família"
-                >
-                  <Settings className="h-4 w-4" />
-                </button>
-                {pinHash && (
-                  <button
-                    onClick={handleLockNow}
-                    className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg border border-indigo-500/30 hover:border-indigo-500/50 transition-all text-indigo-300 hover:text-white cursor-pointer flex items-center gap-1 text-xs font-bold"
-                    title="Bloquear aplicativo agora"
-                  >
-                    <Lock className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Bloquear</span>
-                  </button>
-                )}
+    <main className="min-h-screen bg-[#0a0e1a] text-slate-100 p-3 sm:p-5 md:p-8 pb-28 md:pb-12">
+      <div className="mx-auto max-w-7xl space-y-6 sm:space-y-8">
+        {/* HEADER MODERNO MOBILE-FIRST */}
+        <header className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-white/10">
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30">
+                <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <p className="text-slate-400 font-medium text-sm">Controle da Casa ({partner1}, {partner2} & Filhos)</p>
+              <div className="flex flex-col">
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-white leading-tight">
+                  Minhas Finanças & Casa
+                </h1>
+                <p className="text-slate-400 font-medium text-xs sm:text-sm">
+                  {partner1} & {partner2} • Família
+                </p>
+              </div>
+            </div>
+
+            {/* Mobile Header Quick Actions (Lock, Privacy, Settings) */}
+            <div className="flex items-center gap-1.5 sm:hidden">
+              <button
+                onClick={togglePrivacy}
+                aria-label="Alternar modo privacidade"
+                className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                  isPrivate
+                    ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/40'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:text-white'
+                }`}
+                title={isPrivate ? "Mostrar valores" : "Ocultar valores"}
+              >
+                {isPrivate ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+              {pinHash && (
+                <button
+                  onClick={handleLockNow}
+                  aria-label="Bloquear aplicativo"
+                  className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-xl border border-indigo-500/30 text-indigo-300 cursor-pointer"
+                  title="Bloquear agora"
+                >
+                  <Lock className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                onClick={() => setActiveTab('config')}
+                aria-label="Configurações"
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white cursor-pointer"
+                title="Configurações"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 bg-slate-800/50 p-1.5 rounded-2xl border border-slate-700">
-            <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-slate-700 rounded-xl transition-colors text-slate-400 hover:text-white cursor-pointer">
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <span className="text-sm font-bold w-28 text-center text-white uppercase tracking-wider">
-              {monthLabel}
-            </span>
-            <button onClick={() => changeMonth(1)} className="p-2 hover:bg-slate-700 rounded-xl transition-colors text-slate-400 hover:text-white cursor-pointer">
-              <ChevronRight className="h-5 w-5" />
-            </button>
+          {/* Desktop / Tablet Controls Cluster */}
+          <div className="flex items-center justify-between w-full sm:w-auto gap-2 sm:gap-3">
+            {/* Seletor de Mês Compacto */}
+            <div className="flex items-center gap-2 bg-[#121827] px-2 py-1.5 rounded-2xl border border-white/10 shadow-md">
+              <button
+                onClick={() => changeMonth(-1)}
+                className="p-1.5 hover:bg-white/10 rounded-xl transition-colors text-slate-400 hover:text-white cursor-pointer active:scale-90"
+                title="Mês anterior"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-xs sm:text-sm font-black w-28 sm:w-32 text-center text-white uppercase tracking-wider truncate">
+                {monthLabel}
+              </span>
+              <button
+                onClick={() => changeMonth(1)}
+                className="p-1.5 hover:bg-white/10 rounded-xl transition-colors text-slate-400 hover:text-white cursor-pointer active:scale-90"
+                title="Próximo mês"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Desktop Actions */}
+            <div className="hidden sm:flex items-center gap-2">
+              <button
+                onClick={togglePrivacy}
+                aria-label="Alternar modo privacidade"
+                className={`p-2.5 rounded-xl border transition-all cursor-pointer active:scale-95 ${
+                  isPrivate
+                    ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/40 shadow-sm'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10'
+                }`}
+                title={isPrivate ? "Mostrar valores" : "Ocultar valores (Privacidade)"}
+              >
+                {isPrivate ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+              {pinHash && (
+                <button
+                  onClick={handleLockNow}
+                  aria-label="Bloquear aplicativo agora"
+                  className="p-2.5 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-xl border border-indigo-500/30 text-indigo-300 hover:text-white transition-all cursor-pointer flex items-center gap-1 text-xs font-bold active:scale-95"
+                  title="Bloquear aplicativo agora"
+                >
+                  <Lock className="h-4 w-4" />
+                  <span>Bloquear</span>
+                </button>
+              )}
+              <button
+                onClick={() => setActiveTab('config')}
+                aria-label="Abrir configurações"
+                className="p-2.5 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-slate-400 hover:text-white transition-all cursor-pointer active:scale-95"
+                title="Configurações da Casa e Família"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </header>
 
-        <NavTabs tabs={TABS} active={activeTab} onChange={setActiveTab} />
+        {!online && (
+          <div role="status" className="mt-2 flex items-center gap-2 bg-amber-500/15 border border-amber-500/30 rounded-2xl px-4 py-3 text-xs text-amber-300 animate-fade-in">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+            <p className="font-bold">Você está offline. As alterações serão salvas localmente.</p>
+          </div>
+        )}
+
+        {dataError && (
+          <div role="alert" className="mt-2 flex items-start gap-2 bg-rose-500/15 border border-rose-500/30 rounded-2xl px-4 py-3 text-xs text-rose-300 animate-fade-in">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-rose-400" />
+            <div className="flex-1">
+              <p className="font-bold">Erro ao carregar dados do servidor</p>
+              <p className="mt-0.5 text-rose-300/90 capitalize">{dataError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchData}
+              className="shrink-0 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-white/10 font-bold transition-all cursor-pointer"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
+
+        <NavTabs
+          tabs={TABS}
+          active={activeTab}
+          onChange={setActiveTab}
+          onQuickAdd={() => handleOpenQuickAdd('expense')}
+          pendingBadges={{
+            financas: pendingUrgentTransactions.length,
+            tarefas: tasks.filter(t => !t.completed).length,
+          }}
+        />
 
         {/* Aba: Início */}
         {activeTab === 'inicio' && (
           <div className="space-y-6">
-            {pendingUrgentTransactions.length > 0 && (
-              <div className="flex flex-col items-center justify-center p-8 bg-slate-800/40 rounded-3xl border border-red-500/30 text-center space-y-4 animate-fade-in shadow-2xl">
-                <div className="text-5xl">🚨</div>
-                <div className="space-y-1">
-                  <p className="text-slate-300 font-medium">
-                    Você tem <span className="text-red-400 font-bold">{pendingUrgentTransactions.length} despesas urgentes (vencidas ou a vencer)</span> no total de
-                    <span className="text-red-400 font-bold"> R$ {pendingUrgentTransactions.reduce((acc, t) => acc + Number(t.amount), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                  </p>
-                  <button
-                    onClick={openTransactionsWithPending}
-                    className="text-red-400 font-bold hover:underline cursor-pointer"
-                  >
-                    Verificar
-                  </button>
-                </div>
-              </div>
-            )}
-
             <Dashboard
               transactions={monthTransactions}
               allTransactions={transactions}
@@ -1147,6 +1343,8 @@ export default function Home() {
               viewDate={viewDate}
               tasks={tasks}
               wishlist={wishlist}
+              isPrivate={isPrivate}
+              onOpenAddTransaction={handleOpenQuickAdd}
               onNavigateTab={(tab) => {
                 if (tab === 'financas') {
                   setActiveTab('financas');
@@ -1163,19 +1361,19 @@ export default function Home() {
         {activeTab === 'financas' && (
           <div className="space-y-6">
             {/* Sub-navegação discreta de Finanças */}
-            <div className="flex flex-wrap gap-2 p-1.5 rounded-2xl bg-slate-800/60 border border-slate-700/80 w-full sm:w-auto self-start">
+            <div className="flex gap-2 p-1.5 rounded-2xl bg-[#121827] border border-white/10 w-full sm:w-auto self-start overflow-x-auto no-scrollbar">
               {[
-                { id: 'transacoes', label: '📄 Transações & Lançamentos' },
+                { id: 'transacoes', label: '📄 Transações & Extrato' },
                 { id: 'cartoes', label: '💳 Faturas & Cartões' },
                 { id: 'relatorios', label: '📊 Relatórios' }
               ].map((sub) => (
                 <button
                   key={sub.id}
                   onClick={() => setFinanceSubTab(sub.id)}
-                  className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                  className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
                     financeSubTab === sub.id
                       ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/40'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
                   }`}
                 >
                   {sub.label}
@@ -1205,7 +1403,7 @@ export default function Home() {
                   onImport={handleImportTransactions}
                 />
 
-                <div className="grid gap-8 lg:grid-cols-2">
+                <div className="grid gap-6 lg:grid-cols-2">
                   <AddTransactionForm
                     onAdd={handleAddTransaction}
                     onAddMany={handleBulkAdd}
@@ -1229,6 +1427,7 @@ export default function Home() {
                     onClearCardFilter={() => setSelectedCardFilter(null)}
                     viewDate={viewDate}
                     variaveis={variaveis}
+                    isPrivate={isPrivate}
                   />
                 </div>
               </div>
@@ -1238,13 +1437,13 @@ export default function Home() {
             {financeSubTab === 'cartoes' && (
               <section className="space-y-6 animate-fade-in">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                  <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                     <CreditCard className="h-5 w-5 text-indigo-400" />
                     Cartões de Crédito
                   </h2>
                   <button
                     onClick={() => setIsAddCardModalOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition-all cursor-pointer shadow-lg shadow-indigo-500/20 border border-indigo-400/30 hover:scale-105"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xs font-black transition-all cursor-pointer shadow-lg shadow-indigo-500/25 border border-indigo-400/30 active:scale-95"
                   >
                     <Plus className="h-4 w-4" />
                     Adicionar Novo Cartão
@@ -1548,7 +1747,57 @@ export default function Home() {
               </CardContent>
             </Card>
 
+            {/* Conta / Conexão */}
+            <Card className="animate-slide-up border-emerald-500/20 bg-gradient-to-br from-[#1e293b] to-[#172033]">
+              <CardContent className="p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <ShieldCheck className="h-5 w-5 text-emerald-400" /> Conta & Segurança na Nuvem
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      {user
+                        ? `Conectado como ${user.email}. Ativar RLS no Supabase protege os dados no servidor, não só a interface.`
+                        : 'Nenhuma sessão ativa. É possível usar o app sem login (modo atual).'}
+                    </p>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-black border ${
+                    user
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}>
+                    {user ? '● Conectado' : '○ Visitante'}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  {!user ? (
+                    <button
+                      onClick={() => setShowAuthScreen(true)}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-lg shadow-emerald-500/25"
+                    >
+                      <ShieldCheck className="h-4 w-4" /> Entrar / Criar conta
+                    </button>
+                  ) : (
+                    <>
+                      <span className="text-xs font-bold text-emerald-300 break-all">
+                        {user.email}
+                      </span>
+                      <button
+                        onClick={async () => { await signOut(); toast('Sessão encerrada.'); }}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Unlock className="h-4 w-4" /> Sair
+                      </button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
             <CategoriesEditor />
+
+            <AuditLogViewer />
 
             <Card className="animate-slide-up border-red-500/20">
               <CardContent className="p-6 space-y-3">
@@ -2124,7 +2373,7 @@ export default function Home() {
               <h3 className="text-xl font-bold text-red-400 flex items-center gap-2">
                 <AlertTriangle className="h-6 w-6 text-red-500 animate-bounce" /> Resetar Transações
               </h3>
-              <button onClick={() => { setIsResetModalOpen(false); setResetConfirmInput(''); }} className="text-slate-400 hover:text-white p-1 cursor-pointer">
+              <button onClick={() => { setIsResetModalOpen(false); setResetConfirmInput(''); setResetPin(''); setPendingReset(false); }} className="text-slate-400 hover:text-white p-1 cursor-pointer">
                 <X className="h-6 w-6" />
               </button>
             </div>
@@ -2143,23 +2392,36 @@ export default function Home() {
                 value={resetConfirmInput}
                 onChange={(e) => setResetConfirmInput(e.target.value)}
               />
+              {pinHash && (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-red-300">Confirme seu PIN de acesso</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    placeholder="Digite seu PIN para liberar a exclusão"
+                    className="w-full bg-slate-900 border border-red-500/30 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50 transition-all"
+                    value={resetPin}
+                    onChange={(e) => setResetPin(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => { setIsResetModalOpen(false); setResetConfirmInput(''); }}
+                onClick={() => { setIsResetModalOpen(false); setResetConfirmInput(''); setResetPin(''); setPendingReset(false); }}
                 className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all border border-slate-700 text-xs cursor-pointer"
               >
                 CANCELAR
               </button>
               <button
                 type="button"
-                disabled={resetConfirmInput.trim().toUpperCase() !== 'RESETAR'}
-                onClick={handleResetAllTransactions}
+                disabled={resetConfirmInput.trim().toUpperCase() !== 'RESETAR' || (!!pinHash && !resetPin) || pendingReset}
+                onClick={() => { setPendingReset(true); handleResetAllTransactions(); }}
                 className="flex-1 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-red-500/20 text-xs flex items-center justify-center gap-2 cursor-pointer"
               >
-                <Trash2 className="h-4 w-4" /> APAGAR TUDO
+                <Trash2 className="h-4 w-4" /> {pendingReset ? 'Confirmação...' : 'APAGAR TUDO'}
               </button>
             </div>
           </div>
@@ -2416,6 +2678,36 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal / Bottom Sheet de Lançamento Rápido */}
+      {isQuickAddOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[#0f172a] border border-white/15 w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl p-4 sm:p-6 space-y-4 animate-slide-up max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center pb-2 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">⚡</span>
+                <h3 className="text-base sm:text-lg font-black text-white">Lançamento Rápido</h3>
+              </div>
+              <button
+                onClick={() => setIsQuickAddOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-xl hover:bg-white/10 cursor-pointer"
+                title="Fechar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <AddTransactionForm
+              onAdd={handleAddTransaction}
+              onAddMany={handleBulkAdd}
+              cartoes={cartoes}
+              partner1={partner1}
+              partner2={partner2}
+              initialType={quickAddType}
+              onSuccess={() => setIsQuickAddOpen(false)}
+            />
           </div>
         </div>
       )}

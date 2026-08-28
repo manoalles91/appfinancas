@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Sparkles, Lock, Unlock, Delete, KeyRound, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Lock, Unlock, Delete, KeyRound, AlertCircle } from 'lucide-react';
 import { verifyPin } from '@/lib/security';
 
 export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2 = 'Kelly' }) {
@@ -9,29 +9,39 @@ export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2
   const [error, setError] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
-  const [showPinText, setShowPinText] = useState(false);
   const [shake, setShake] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [isLockedOut, setIsLockedOut] = useState(false);
+
+  const MAX_ATTEMPTS = 5;
+
+  // Contagem regressiva automática quando bloqueado
+  useEffect(() => {
+    if (!isLockedOut) return;
+    const t = setTimeout(() => setIsLockedOut(false), 30_000);
+    return () => clearTimeout(t);
+  }, [isLockedOut]);
 
   const handleInputDigit = useCallback((digit) => {
-    if (isSuccess) return;
+    if (isSuccess || isLockedOut) return;
     setError(false);
     setErrorMsg('');
     setPin(prev => (prev.length < 8 ? prev + digit : prev));
-  }, [isSuccess]);
+  }, [isSuccess, isLockedOut]);
 
   const handleDelete = useCallback(() => {
-    if (isSuccess) return;
+    if (isSuccess || isLockedOut) return;
     setError(false);
     setErrorMsg('');
     setPin(prev => prev.slice(0, -1));
-  }, [isSuccess]);
+  }, [isSuccess, isLockedOut]);
 
   const handleClear = useCallback(() => {
-    if (isSuccess) return;
+    if (isSuccess || isLockedOut) return;
     setError(false);
     setErrorMsg('');
     setPin('');
-  }, [isSuccess]);
+  }, [isSuccess, isLockedOut]);
 
   const handleVerify = useCallback(async (pinToTest) => {
     const candidate = pinToTest || pin;
@@ -42,22 +52,31 @@ export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2
       setTimeout(() => setShake(false), 500);
       return;
     }
+    if (isLockedOut) return;
 
     const isValid = await verifyPin(candidate, pinHash);
     if (isValid) {
+      setFailedAttempts(0);
       setIsSuccess(true);
       setError(false);
       setTimeout(() => {
         onUnlock();
       }, 350);
     } else {
+      const attempts = failedAttempts + 1;
+      setFailedAttempts(attempts);
       setError(true);
-      setErrorMsg('PIN incorreto. Tente novamente.');
       setShake(true);
       setPin('');
       setTimeout(() => setShake(false), 500);
+      if (attempts >= MAX_ATTEMPTS) {
+        setIsLockedOut(true);
+        setErrorMsg(`Muitas tentativas. Aguarde 30 segundos.`);
+      } else {
+        setErrorMsg(`PIN incorreto. ${MAX_ATTEMPTS - attempts} tentativa(s) restante(s).`);
+      }
     }
-  }, [pin, pinHash, onUnlock]);
+  }, [pin, pinHash, onUnlock, failedAttempts, isLockedOut]);
 
   // Captura eventos do teclado físico
   useEffect(() => {
@@ -78,7 +97,7 @@ export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2
   }, [handleInputDigit, handleDelete, handleClear, handleVerify]);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0a0f1d]/95 backdrop-blur-xl p-4 animate-fade-in select-none">
+    <div role="dialog" aria-modal="true" aria-label="Tela de bloqueio do aplicativo" className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0a0f1d]/95 backdrop-blur-xl p-4 animate-fade-in select-none">
       {/* Luz ambiente de fundo */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-80 h-80 bg-purple-600/15 rounded-full blur-3xl pointer-events-none" />
@@ -160,8 +179,9 @@ export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2
             <button
               key={num}
               type="button"
+              disabled={isLockedOut}
               onClick={() => handleInputDigit(String(num))}
-              className="h-14 rounded-2xl bg-slate-800/60 hover:bg-slate-700/80 active:bg-indigo-600 text-xl font-black text-white transition-all shadow-md active:scale-95 border border-slate-700/50 flex items-center justify-center cursor-pointer"
+              className="h-14 rounded-2xl bg-slate-800/60 hover:bg-slate-700/80 active:bg-indigo-600 text-xl font-black text-white transition-all shadow-md active:scale-95 border border-slate-700/50 flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {num}
             </button>
@@ -170,8 +190,9 @@ export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2
           {/* Botão Limpar */}
           <button
             type="button"
+            disabled={isLockedOut}
             onClick={handleClear}
-            className="h-14 rounded-2xl bg-slate-800/30 hover:bg-slate-800/60 active:bg-slate-700 text-xs font-black uppercase text-slate-400 hover:text-white transition-all border border-slate-800 flex items-center justify-center cursor-pointer active:scale-95"
+            className="h-14 rounded-2xl bg-slate-800/30 hover:bg-slate-800/60 active:bg-slate-700 text-xs font-black uppercase text-slate-400 hover:text-white transition-all border border-slate-800 flex items-center justify-center cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Limpar tudo"
           >
             Limpar
@@ -180,8 +201,9 @@ export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2
           {/* Dígito 0 */}
           <button
             type="button"
+            disabled={isLockedOut}
             onClick={() => handleInputDigit('0')}
-            className="h-14 rounded-2xl bg-slate-800/60 hover:bg-slate-700/80 active:bg-indigo-600 text-xl font-black text-white transition-all shadow-md active:scale-95 border border-slate-700/50 flex items-center justify-center cursor-pointer"
+            className="h-14 rounded-2xl bg-slate-800/60 hover:bg-slate-700/80 active:bg-indigo-600 text-xl font-black text-white transition-all shadow-md active:scale-95 border border-slate-700/50 flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             0
           </button>
@@ -189,8 +211,10 @@ export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2
           {/* Botão Apagar (Backspace) */}
           <button
             type="button"
+            disabled={isLockedOut}
             onClick={handleDelete}
-            className="h-14 rounded-2xl bg-slate-800/30 hover:bg-slate-800/60 active:bg-red-500/20 text-slate-400 hover:text-red-400 transition-all border border-slate-800 flex items-center justify-center cursor-pointer active:scale-95"
+            aria-label="Apagar último dígito"
+            className="h-14 rounded-2xl bg-slate-800/30 hover:bg-slate-800/60 active:bg-red-500/20 text-slate-400 hover:text-red-400 transition-all border border-slate-800 flex items-center justify-center cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Apagar último dígito"
           >
             <Delete className="h-6 w-6" />
@@ -202,14 +226,14 @@ export default function AppLock({ pinHash, onUnlock, partner1 = 'Alle', partner2
           <button
             type="button"
             onClick={() => handleVerify()}
-            disabled={pin.length === 0 || isSuccess}
+            disabled={pin.length === 0 || isSuccess || isLockedOut}
             className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
-              pin.length >= 4
+              pin.length >= 4 && !isLockedOut
                 ? 'bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white shadow-indigo-500/25'
                 : 'bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-70'
             }`}
           >
-            <KeyRound className="h-4 w-4" /> Desbloquear
+            <KeyRound className="h-4 w-4" /> {isLockedOut ? 'Aguarde...' : 'Desbloquear'}
           </button>
         </div>
       </div>

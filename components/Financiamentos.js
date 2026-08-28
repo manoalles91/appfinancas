@@ -5,15 +5,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Home, Plus, Edit3, Trash2, RefreshCw, Check, X, TrendingDown, CalendarDays, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
+import { formatCurrency } from '@/lib/format';
 
 const STORAGE_KEY = 'fincasal_financiamentos';
-
-const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', {
-        style: 'currency',
-        currency: 'BRL',
-    }).format(value || 0);
-};
 
 const loadAll = () => {
     try {
