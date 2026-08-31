@@ -23,6 +23,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useSession, REQUIRE_AUTH, signOut } from '@/lib/auth';
 import AuthScreen from '@/components/AuthScreen';
 import { logAudit } from '@/lib/audit';
+import { deltaSaldo, getPagoPor, setPagoPor, getSaldo } from '@/lib/saldo';
 
 const TABS = [
   { id: 'inicio', label: 'Início', icon: HomeIcon },
@@ -118,6 +119,9 @@ export default function Home() {
   // States para reajuste manual de fatura por mês
   const [reajusteFatura, setReajusteFatura] = useState(null);
   const [ajusteVersion, setAjusteVersion] = useState(0);
+
+  // Saldo automático: modal "Quem pagou/recebeu?"
+  const [pendingPaidTx, setPendingPaidTx] = useState(null);
 
   const getAjustesFaturas = () => {
     try {
@@ -514,6 +518,18 @@ export default function Home() {
     setViewDate(next);
   };
 
+  const isCreditTrans = useCallback((t) => {
+    if (!t) return false;
+    if (t.type === 'income') return false;
+    return !!(t.type === 'credit' || t.payment_method === 'credit' || t.card_name);
+  }, []);
+
+  const quienDeQuem = useCallback((quem) => {
+    if (quem === 'Eu' || quem === 'Comum - Eu') return 'alle';
+    if (quem === 'Outro' || quem === 'Comum - Outro') return 'kelly';
+    return 'alle';
+  }, []);
+
   const handleAddTransaction = useCallback(async (newTransaction) => {
     const { data, error } = await supabase
       .from('transactions')
@@ -535,8 +551,17 @@ export default function Home() {
       }])
       .select();
     if (error) throw error;
+
+    const inserted = data && data[0];
+    if (inserted && inserted.pago && !isCreditTrans(inserted)) {
+      const who = quienDeQuem(inserted.quem) || 'alle';
+      const amount = Number(inserted.amount || 0);
+      deltaSaldo(who, (inserted.type === 'income' ? 1 : -1) * amount);
+      setPagoPor(inserted.id, who);
+    }
+
     setTransactions(prev => [data[0], ...prev]);
-  }, []);
+  }, [isCreditTrans, quienDeQuem]);
 
   const handleConvertToTransaction = useCallback(async (wishlistItem) => {
     try {
@@ -580,13 +605,19 @@ export default function Home() {
         const { error } = await supabase.from('transactions').insert(items.slice(i, i + CHUNK));
         if (error) throw error;
       }
+      const first = items && items[0];
+      if (first && first.pago && !isCreditTrans(first)) {
+        const who = quienDeQuem(first.quem) || 'alle';
+        const amount = Number(first.amount || 0);
+        deltaSaldo(who, (first.type === 'income' ? 1 : -1) * amount);
+      }
       await fetchData();
       toast(successMessage || `${items.length} transações adicionadas!`);
     } catch (error) {
       console.error('Error adding transactions:', error.message);
       toast('Erro ao adicionar: ' + error.message, 'error');
     }
-  }, [fetchData, toast]);
+  }, [fetchData, toast, isCreditTrans, quienDeQuem]);
 
   const FIXAS_HORIZON_MONTHS = 24;
 
@@ -769,52 +800,127 @@ export default function Home() {
       : `Ajuste da fatura de ${reajusteFatura.cardName} removido.`);
   }, [reajusteFatura, toast]);
 
-  const handleTogglePaid = useCallback(async (id, newStatus) => {
+  const doMarkPaid = useCallback(async (id, whoPaid) => {
+    const t = transactions.find(x => x.id === id);
+    const isCredit = isCreditTrans(t);
     try {
       const { error } = await supabase
         .from('transactions')
-        .update({ pago: newStatus })
+        .update({ pago: true })
         .eq('id', id);
       if (error) throw error;
-      setTransactions(prev => prev.map(t => t.id === id ? { ...t, pago: newStatus } : t));
-      await logAudit({ action: newStatus ? 'mark_paid' : 'mark_unpaid', entity: 'transaction', entityId: id, description: newStatus ? 'Marcado como pago' : 'Marcado como não pago' });
+      setTransactions(prev => prev.map(x => x.id === id ? { ...x, pago: true } : x));
 
-      if (newStatus) {
-        const t = transactions.find(x => x.id === id);
-        if (t && t.fixa && !t.installment_info) {
-          const d = new Date((t.date || '').slice(0, 10) + 'T12:00:00');
-          const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
-          const nextDate = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), lastDay), 12, 0, 0);
-          const nextKey = nextDate.toISOString().slice(0, 7);
-          const exists = transactions.some(x => x.fixa && !x.installment_info && x.description === t.description && x.date && x.date.slice(0, 7) === nextKey);
-          if (!exists) {
-            const { data, error: insErr } = await supabase
-              .from('transactions')
-              .insert([{
-                description: t.description,
-                amount: t.amount,
-                type: t.type,
-                category: t.category,
-                date: nextDate.toISOString(),
-                fixa: true,
-                pago: false,
-                payment_method: t.payment_method || 'checking',
-                quem: t.quem || 'Comum',
-                subcategoria: t.subcategoria || '',
-                destino: t.destino || '',
-                card_name: t.type === 'credit' ? t.card_name || null : null,
-              }])
-              .select();
-            if (insErr) throw insErr;
-            if (data && data[0]) setTransactions(prev => [data[0], ...prev]);
-          }
+      if (t && !isCredit && whoPaid) {
+        const amount = Number(t.amount || 0);
+        deltaSaldo(whoPaid, (t.type === 'income' ? 1 : -1) * amount);
+        setPagoPor(id, whoPaid);
+
+        const whoName = whoPaid === 'alle' ? partner1 : partner2;
+        const formatted = amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        if (t.type === 'income') {
+          toast(`Receita de ${formatted} somada ao saldo de ${whoName}!`);
+        } else {
+          toast(`Despesa de ${formatted} debitada do saldo de ${whoName}!`);
+        }
+      } else {
+        toast('Transação marcada como paga!');
+      }
+
+      await logAudit({ action: 'mark_paid', entity: 'transaction', entityId: id, description: 'Marcado como pago' });
+
+      if (t && t.fixa && !t.installment_info) {
+        const d = new Date((t.date || '').slice(0, 10) + 'T12:00:00');
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
+        const nextDate = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), lastDay), 12, 0, 0);
+        const nextKey = nextDate.toISOString().slice(0, 7);
+        const exists = transactions.some(x => x.fixa && !x.installment_info && x.description === t.description && x.date && x.date.slice(0, 7) === nextKey);
+        if (!exists) {
+          const { data, error: insErr } = await supabase
+            .from('transactions')
+            .insert([{
+              description: t.description,
+              amount: t.amount,
+              type: t.type,
+              category: t.category,
+              date: nextDate.toISOString(),
+              fixa: true,
+              pago: false,
+              payment_method: t.payment_method || 'checking',
+              quem: t.quem || 'Comum',
+              subcategoria: t.subcategoria || '',
+              destino: t.destino || '',
+              card_name: t.type === 'credit' ? t.card_name || null : null,
+            }])
+            .select();
+          if (insErr) throw insErr;
+          if (data && data[0]) setTransactions(prev => [data[0], ...prev]);
         }
       }
     } catch (error) {
       console.error('Error updating transaction status:', error.message);
       toast('Erro ao atualizar transação: ' + error.message, 'error');
     }
-  }, [transactions, toast]);
+  }, [transactions, toast, isCreditTrans, partner1, partner2]);
+
+  const doMarkUnpaid = useCallback(async (id) => {
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update({ pago: false })
+        .eq('id', id);
+      if (error) throw error;
+      setTransactions(prev => prev.map(t => t.id === id ? { ...t, pago: false } : t));
+      await logAudit({ action: 'mark_unpaid', entity: 'transaction', entityId: id, description: 'Marcado como não pago' });
+    } catch (error) {
+      console.error('Error updating transaction status:', error.message);
+      toast('Erro ao atualizar transação: ' + error.message, 'error');
+    }
+  }, [toast]);
+
+  const handleTogglePaid = useCallback((id, newStatus) => {
+    const t = transactions.find(x => x.id === id);
+    const isCredit = isCreditTrans(t);
+
+    if (newStatus) {
+      if (!isCredit) {
+        setPendingPaidTx(id);
+        return;
+      }
+      doMarkPaid(id);
+      return;
+    }
+
+    if (!isCredit) {
+      const who = getPagoPor(id);
+      if (who && t) {
+        const amount = Number(t.amount || 0);
+        deltaSaldo(who, (t.type === 'income' ? -1 : 1) * amount);
+        setPagoPor(id, null);
+
+        const whoName = who === 'alle' ? partner1 : partner2;
+        const formatted = amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        if (t.type === 'income') {
+          toast(`Receita desmarcada: ${formatted} subtraído do saldo de ${whoName}.`);
+        } else {
+          toast(`Despesa desmarcada: ${formatted} estornado para o saldo de ${whoName}.`);
+        }
+      } else {
+        toast('Transação marcada como pendente.');
+      }
+    }
+    doMarkUnpaid(id);
+  }, [transactions, doMarkPaid, doMarkUnpaid, isCreditTrans, partner1, partner2, toast]);
+
+  const confirmPaidWho = useCallback((who) => {
+    const id = pendingPaidTx;
+    setPendingPaidTx(null);
+    if (id) doMarkPaid(id, who);
+  }, [pendingPaidTx, doMarkPaid]);
+
+  const cancelPaidWho = useCallback(() => {
+    setPendingPaidTx(null);
+  }, []);
 
   const handleAdjustAmount = useCallback(async (id, amount) => {
     try {
@@ -1038,6 +1144,27 @@ export default function Home() {
         if (upErr) throw upErr;
       }
 
+      const origTx = transactions.find(t => t.id === editingTransaction.id);
+      const isCredit = isCreditTrans(payload);
+      if (!isCredit && origTx) {
+        const wasPaid = !!origTx.pago;
+        const willBePaid = !!payload.pago;
+        const oldAmount = Number(origTx.amount || 0);
+        const newAmount = Number(payload.amount || 0);
+        const who = getPagoPor(origTx.id) || quienDeQuem(payload.quem) || 'alle';
+        const sign = payload.type === 'income' ? 1 : -1;
+
+        if (!wasPaid && willBePaid) {
+          deltaSaldo(who, sign * newAmount);
+          setPagoPor(editingTransaction.id, who);
+        } else if (wasPaid && !willBePaid) {
+          deltaSaldo(who, -1 * sign * oldAmount);
+          setPagoPor(editingTransaction.id, null);
+        } else if (wasPaid && willBePaid && oldAmount !== newAmount) {
+          deltaSaldo(who, sign * (newAmount - oldAmount));
+        }
+      }
+
       await logAudit({
         action: needsSplit ? 'split' : 'update',
         entity: 'transaction',
@@ -1063,7 +1190,7 @@ export default function Home() {
       console.error('Error updating transaction:', error.message);
       toast('Erro ao atualizar: ' + error.message, 'error');
     }
-  }, [editingTransaction, transactions, toast]);
+  }, [editingTransaction, transactions, toast, isCreditTrans, quienDeQuem]);
 
   const handleAddCard = async (e) => {
     e.preventDefault();
@@ -2675,6 +2802,93 @@ export default function Home() {
             />
           </div>
         </div>
+      )}
+
+      {/* Modal: Quem pagou/recebeu? (ajuste automático de saldo) */}
+      {pendingPaidTx && (
+        (() => {
+          const pt = transactions.find(x => x.id === pendingPaidTx);
+          const isReceita = pt && pt.type === 'income';
+          const amount = pt ? Number(pt.amount || 0) : 0;
+          const saldos = getSaldo();
+          const p1Current = saldos.alle;
+          const p2Current = saldos.kelly;
+          const p1Next = isReceita ? p1Current + amount : p1Current - amount;
+          const p2Next = isReceita ? p2Current + amount : p2Current - amount;
+          const fmt = (val) => Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label="Quem pagou">
+              <div className="bg-[#121827] border border-white/15 w-full max-w-sm rounded-2xl shadow-2xl p-4 sm:p-5 space-y-3.5 animate-scale-in">
+                <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                  <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                    <span>{isReceita ? '💰' : '💳'}</span>
+                    {isReceita ? 'Quem recebeu?' : 'Quem pagou?'}
+                  </h3>
+                  <button
+                    onClick={cancelPaidWho}
+                    className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 cursor-pointer text-xs"
+                    aria-label="Fechar"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="bg-[#0a0e1a] rounded-xl p-3 border border-white/10 space-y-1">
+                  <p className="text-xs font-bold text-white truncate">{pt && pt.description}</p>
+                  <p className="text-sm font-black text-emerald-400">
+                    R$ {fmt(amount)}
+                  </p>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    {isReceita ? 'O valor será somado ao saldo de quem recebeu.' : 'O valor será debitado do saldo de quem pagou.'}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => confirmPaidWho('alle')}
+                    className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
+                  >
+                    <span className="text-xs font-black text-purple-300 flex items-center gap-1 mb-0.5">
+                      💜 {partner1}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Saldo: R$ {fmt(p1Current)}
+                    </span>
+                    <span className={`text-[10px] font-bold ${isReceita ? 'text-emerald-400' : 'text-purple-300'}`}>
+                      ➔ R$ {fmt(p1Next)}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => confirmPaidWho('kelly')}
+                    className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
+                  >
+                    <span className="text-xs font-black text-rose-300 flex items-center gap-1 mb-0.5">
+                      💖 {partner2}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Saldo: R$ {fmt(p2Current)}
+                    </span>
+                    <span className={`text-[10px] font-bold ${isReceita ? 'text-emerald-400' : 'text-rose-300'}`}>
+                      ➔ R$ {fmt(p2Next)}
+                    </span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={cancelPaidWho}
+                  className="w-full py-2 rounded-xl border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/5 cursor-pointer transition-colors"
+                >
+                  Cancelar (não alterar status)
+                </button>
+              </div>
+            </div>
+          );
+        })()
       )}
 
       {/* Tela de Bloqueio por Senha (AppLock) */}

@@ -74,6 +74,18 @@
 - O app **escuta mudanças** nas tabelas `transactions` e `cartoes` e atualiza sozinho quando algo muda em outro aparelho.
 - Requer o Supabase Realtime (padrão nas tabelas do Supabase).
 
+### Saldo automático (receita/despesa mexem no saldo)
+- Antes, o saldo era **só manual**: as transações não alteravam o saldo; você precisava ajustar à mão em Configurações.
+- Agora, ao **marcar uma transação como paga/recebida**, aparece um popup **"Quem pagou? / Quem recebeu?"** com {partner1} e {partner2}:
+  - **Receita** (ex.: salário) → o valor **entra** no saldo de quem recebeu.
+  - **Despesa** (conta/débito) → o valor **sai** do saldo de quem pagou.
+  - **Cartão de crédito** → **não** desconta na hora (só quando a fatura for paga).
+- Ao **desmarcar** como pago, o saldo é **revertido** automaticamente.
+- O saldo manual continua existindo; as transações passam a mexer nele por cima.
+- Arquivos: `lib/saldo.js` (novo, centraliza leitura/escrita do saldo), `app/page.js`, `components/Balances.js`.
+
+> **Nota de comportamento:** para a transação do salário, ao marcar como "recebida" você escolhe quem recebeu (ex.: Alle) e o valor é somado ao saldo dela na hora.
+
 ---
 
 ## 6. 🚀 Para ATIVAR as proteções no servidor (você precisa fazer)

@@ -8,29 +8,51 @@ import { formatCurrency } from '@/lib/format';
 const SALDO_KEYS = { alle: 'saldo_alle', kelly: 'saldo_kelly' };
 
 export default function Balances({ partner1 = 'Alle', partner2 = 'Kelly', onChange, isPrivate = false }) {
-    const [alle, setAlle] = useState(null);
-    const [kelly, setKelly] = useState(null);
+    const [alle, setAlle] = useState(() => {
+        if (typeof window === 'undefined') return 0;
+        const a = localStorage.getItem('fincasal_saldo_alle');
+        return a === null ? 0 : parseFloat(a) || 0;
+    });
+    const [kelly, setKelly] = useState(() => {
+        if (typeof window === 'undefined') return 0;
+        const k = localStorage.getItem('fincasal_saldo_kelly');
+        return k === null ? 0 : parseFloat(k) || 0;
+    });
     const [editing, setEditing] = useState(null);
     const [draft, setDraft] = useState('');
 
     useEffect(() => {
-        const a = localStorage.getItem('fincasal_saldo_alle');
-        const k = localStorage.getItem('fincasal_saldo_kelly');
-        setAlle(a === null ? 0 : parseFloat(a) || 0);
-        setKelly(k === null ? 0 : parseFloat(k) || 0);
-
         let active = true;
+        const onSaldoChanged = () => {
+            if (typeof window === 'undefined') return;
+            const a = localStorage.getItem('fincasal_saldo_alle');
+            const k = localStorage.getItem('fincasal_saldo_kelly');
+            if (a !== null) setAlle(parseFloat(a) || 0);
+            if (k !== null) setKelly(parseFloat(k) || 0);
+        };
+        window.addEventListener('fincasal:saldo-changed', onSaldoChanged);
         (async () => {
             try {
                 const { data, error } = await supabase.from('app_settings').select('key,value');
                 if (error || !data || !active) return;
                 for (const row of data) {
-                    if (row.key === SALDO_KEYS.alle) setAlle(parseFloat(row.value) || 0);
-                    if (row.key === SALDO_KEYS.kelly) setKelly(parseFloat(row.value) || 0);
+                    if (row.key === SALDO_KEYS.alle) {
+                        const val = parseFloat(row.value) || 0;
+                        setAlle(val);
+                        try { localStorage.setItem('fincasal_saldo_alle', String(val)); } catch {}
+                    }
+                    if (row.key === SALDO_KEYS.kelly) {
+                        const val = parseFloat(row.value) || 0;
+                        setKelly(val);
+                        try { localStorage.setItem('fincasal_saldo_kelly', String(val)); } catch {}
+                    }
                 }
             } catch {}
         })();
-        return () => { active = false; };
+        return () => {
+            window.removeEventListener('fincasal:saldo-changed', onSaldoChanged);
+            active = false;
+        };
     }, []);
 
     useEffect(() => {
@@ -44,7 +66,9 @@ export default function Balances({ partner1 = 'Alle', partner2 = 'Kelly', onChan
     };
 
     const persist = async (who, val) => {
-        localStorage.setItem(who === 'alle' ? 'fincasal_saldo_alle' : 'fincasal_saldo_kelly', val);
+        try {
+            localStorage.setItem(who === 'alle' ? 'fincasal_saldo_alle' : 'fincasal_saldo_kelly', String(val));
+        } catch {}
         try {
             const { error } = await supabase
                 .from('app_settings')
@@ -53,6 +77,9 @@ export default function Balances({ partner1 = 'Alle', partner2 = 'Kelly', onChan
         } catch (err) {
             console.error('Error saving saldo:', err.message);
         }
+        try {
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('fincasal:saldo-changed'));
+        } catch {}
     };
 
     const save = () => {
