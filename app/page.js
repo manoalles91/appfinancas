@@ -24,6 +24,7 @@ import { useSession, REQUIRE_AUTH, signOut } from '@/lib/auth';
 import AuthScreen from '@/components/AuthScreen';
 import { logAudit } from '@/lib/audit';
 import { deltaSaldo, getPagoPor, setPagoPor, getSaldo } from '@/lib/saldo';
+import { parseLocalDate } from '@/lib/format';
 
 const TABS = [
   { id: 'inicio', label: 'Início', icon: HomeIcon },
@@ -452,7 +453,8 @@ export default function Home() {
     const viewYear = viewDate.getFullYear();
     return transactions.filter(t => {
       if (!t || !t.date) return false;
-      const d = new Date(t.date);
+      const d = parseLocalDate(t.date);
+      if (!d) return false;
       return d.getMonth() === viewMonth && d.getFullYear() === viewYear;
     });
   }, [transactions, viewDate]);
@@ -468,7 +470,8 @@ export default function Home() {
     return cartoes.map(card => {
       const matches = transactions.filter(t => {
         if (!t || !t.date) return false;
-        const d = new Date(t.date);
+        const d = parseLocalDate(t.date);
+        if (!d) return false;
         return t.card_name === card.nome &&
                t.type === 'credit' &&
                d.getMonth() === viewMonth &&
@@ -738,7 +741,9 @@ export default function Home() {
       const viewMonth = viewDate.getMonth();
       const viewYear = viewDate.getFullYear();
       const cardTxs = transactions.filter(t => {
-        const d = new Date(t.date);
+        if (!t || !t.date) return false;
+        const d = parseLocalDate(t.date);
+        if (!d) return false;
         return t.card_name === cardName &&
                t.type === 'credit' &&
                d.getMonth() === viewMonth &&
