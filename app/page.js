@@ -123,6 +123,7 @@ export default function Home() {
 
   // Saldo automático: modal "Quem pagou/recebeu?"
   const [pendingPaidTx, setPendingPaidTx] = useState(null);
+  const [pendingPayInvoice, setPendingPayInvoice] = useState(null);
 
   const getAjustesFaturas = () => {
     try {
@@ -740,6 +741,10 @@ export default function Home() {
     try {
       const viewMonth = viewDate.getMonth();
       const viewYear = viewDate.getFullYear();
+      const monthKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
+      const key = `${cardName}|${monthKey}`;
+      
+      const ajustes = getAjustesFaturas();
       const cardTxs = transactions.filter(t => {
         if (!t || !t.date) return false;
         const d = parseLocalDate(t.date);
@@ -750,27 +755,103 @@ export default function Home() {
                d.getFullYear() === viewYear;
       });
 
-      if (cardTxs.length === 0) {
-        toast(`Nenhuma compra de cartão encontrada no mês atual para o cartão ${cardName}.`, 'error');
-        return;
+      const soma = cardTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+      const ajustado = ajustes[key];
+      const faturaTotal = ajustado != null ? Number(ajustado) : soma;
+
+      if (targetStatus) {
+        if (faturaTotal <= 0 && cardTxs.length === 0) {
+          toast(`Nenhuma compra ou valor de fatura encontrado para o cartão ${cardName} no mês selecionado.`, 'error');
+          return;
+        }
+        setPendingPayInvoice({
+          cardName,
+          faturaTotal,
+          monthKey,
+          txIds: cardTxs.map(t => t.id)
+        });
+      } else {
+        const txIds = cardTxs.map(t => t.id);
+        if (txIds.length > 0) {
+          const { error } = await supabase
+            .from('transactions')
+            .update({ pago: false })
+            .in('id', txIds);
+          if (error) throw error;
+        }
+
+        setTransactions(prev => prev.map(t => txIds.includes(t.id) ? { ...t, pago: false } : t));
+
+        const faturasPagas = getFaturasPagas();
+        faturasPagas[key] = false;
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('fincasal_faturas_pagas', JSON.stringify(faturasPagas));
+        }
+        saveCloudSetting('faturas_pagas', faturasPagas);
+
+        const who = getPagoPor(`fatura|${key}`);
+        if (who && faturaTotal > 0) {
+          deltaSaldo(who, faturaTotal);
+          setPagoPor(`fatura|${key}`, null);
+          const whoName = who === 'alle' ? partner1 : partner2;
+          const formatted = faturaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          toast(`Fatura do ${cardName} reaberta: ${formatted} estornado para o saldo de ${whoName}.`);
+        } else {
+          toast(`Fatura do ${cardName} reaberta.`);
+        }
+        setAjusteVersion(v => v + 1);
+        await logAudit({ action: 'reopen_invoice', entity: 'card', entityId: key, description: `Fatura ${cardName} reaberta` });
       }
-
-      const txIds = cardTxs.map(t => t.id);
-
-      const { error } = await supabase
-        .from('transactions')
-        .update({ pago: targetStatus })
-        .in('id', txIds);
-
-      if (error) throw error;
-
-      setTransactions(prev => prev.map(t => txIds.includes(t.id) ? { ...t, pago: targetStatus } : t));
-      toast(targetStatus ? `Fatura do ${cardName} marcada como PAGA!` : `Fatura do ${cardName} reaberta.`);
     } catch (error) {
       console.error('Error updating invoice status:', error.message);
       toast('Erro ao atualizar fatura: ' + error.message, 'error');
     }
-  }, [transactions, viewDate, toast]);
+  }, [transactions, viewDate, toast, partner1, partner2]);
+
+  const confirmPayInvoice = useCallback(async (whoPaid) => {
+    if (!pendingPayInvoice) return;
+    const { cardName, faturaTotal, monthKey, txIds } = pendingPayInvoice;
+    const key = `${cardName}|${monthKey}`;
+    setPendingPayInvoice(null);
+
+    try {
+      if (txIds.length > 0) {
+        const { error } = await supabase
+          .from('transactions')
+          .update({ pago: true })
+          .in('id', txIds);
+        if (error) throw error;
+      }
+
+      setTransactions(prev => prev.map(t => txIds.includes(t.id) ? { ...t, pago: true } : t));
+
+      const faturasPagas = getFaturasPagas();
+      faturasPagas[key] = true;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('fincasal_faturas_pagas', JSON.stringify(faturasPagas));
+      }
+      saveCloudSetting('faturas_pagas', faturasPagas);
+
+      if (whoPaid && faturaTotal > 0) {
+        deltaSaldo(whoPaid, -faturaTotal);
+        setPagoPor(`fatura|${key}`, whoPaid);
+      }
+
+      setAjusteVersion(v => v + 1);
+
+      const whoName = whoPaid === 'alle' ? partner1 : partner2;
+      const formatted = faturaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      toast(`Fatura do ${cardName} (${formatted}) paga e debitada do saldo de ${whoName}!`);
+      await logAudit({ action: 'pay_invoice', entity: 'card', entityId: key, description: `Fatura ${cardName} paga por ${whoName}` });
+    } catch (error) {
+      console.error('Error paying invoice:', error.message);
+      toast('Erro ao pagar fatura: ' + error.message, 'error');
+    }
+  }, [pendingPayInvoice, toast, partner1, partner2]);
+
+  const cancelPayInvoice = useCallback(() => {
+    setPendingPayInvoice(null);
+  }, []);
 
   const openFaturaAdjust = (card) => {
     const ajustes = getAjustesFaturas();
@@ -2952,6 +3033,91 @@ export default function Home() {
                   className="w-full py-2 rounded-xl border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/5 cursor-pointer transition-colors"
                 >
                   Cancelar (não alterar status)
+                </button>
+              </div>
+            </div>
+          );
+        })()
+      )}
+
+      {/* Modal: Quem pagou a Fatura do Cartão? (ajuste automático de saldo) */}
+      {pendingPayInvoice && (
+        (() => {
+          const { cardName, faturaTotal } = pendingPayInvoice;
+          const saldos = getSaldo();
+          const p1Current = saldos.alle;
+          const p2Current = saldos.kelly;
+          const p1Next = p1Current - faturaTotal;
+          const p2Next = p2Current - faturaTotal;
+          const fmt = (val) => Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label="Quem pagou a fatura">
+              <div className="bg-[#121827] border border-purple-500/30 w-full max-w-sm rounded-2xl shadow-2xl p-4 sm:p-5 space-y-3.5 animate-scale-in">
+                <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                  <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                    <span>💳</span>
+                    Pagar Fatura - {cardName}
+                  </h3>
+                  <button
+                    onClick={cancelPayInvoice}
+                    className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 cursor-pointer text-xs"
+                    aria-label="Fechar"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="bg-[#0a0e1a] rounded-xl p-3 border border-purple-500/20 space-y-1">
+                  <p className="text-xs font-bold text-purple-300 truncate">Fatura {cardName}</p>
+                  <p className="text-base font-black text-rose-400">
+                    R$ {fmt(faturaTotal)}
+                  </p>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Escolha quem realizou o pagamento para debitar este valor do saldo em conta:
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => confirmPayInvoice('alle')}
+                    className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
+                  >
+                    <span className="text-xs font-black text-purple-300 flex items-center gap-1 mb-0.5">
+                      💜 {partner1}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Saldo: R$ {fmt(p1Current)}
+                    </span>
+                    <span className="text-[10px] font-bold text-rose-300">
+                      ➔ R$ {fmt(p1Next)}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => confirmPayInvoice('kelly')}
+                    className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
+                  >
+                    <span className="text-xs font-black text-rose-300 flex items-center gap-1 mb-0.5">
+                      💖 {partner2}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Saldo: R$ {fmt(p2Current)}
+                    </span>
+                    <span className="text-[10px] font-bold text-rose-300">
+                      ➔ R$ {fmt(p2Next)}
+                    </span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={cancelPayInvoice}
+                  className="w-full py-2 rounded-xl border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/5 cursor-pointer transition-colors"
+                >
+                  Cancelar (não alterar fatura)
                 </button>
               </div>
             </div>
