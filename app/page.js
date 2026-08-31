@@ -803,13 +803,41 @@ export default function Home() {
   const doMarkPaid = useCallback(async (id, whoPaid) => {
     const t = transactions.find(x => x.id === id);
     const isCredit = isCreditTrans(t);
+    const isKellySalary = t && (t.description === 'Salário Kelly' || t.description === 'Salario Kelly');
+    const targetMonth = (t && t.date ? t.date : '').slice(0, 7);
+
     try {
       const { error } = await supabase
         .from('transactions')
         .update({ pago: true })
         .eq('id', id);
       if (error) throw error;
-      setTransactions(prev => prev.map(x => x.id === id ? { ...x, pago: true } : x));
+
+      let linkedIds = [];
+      if (isKellySalary && targetMonth) {
+        const payrollDescriptions = ['Unimed SISMUSA', 'Consignado Sicoob 02', 'Consignado Sicoob 03', 'Sindicato dos Servidores'];
+        const linkedPending = transactions.filter(x => 
+          x.id !== id && 
+          x.quem === 'Outro' && 
+          (x.date || '').slice(0, 7) === targetMonth && 
+          !x.pago && 
+          payrollDescriptions.includes(x.description)
+        );
+        if (linkedPending.length > 0) {
+          linkedIds = linkedPending.map(x => x.id);
+          try {
+            await supabase.from('transactions').update({ pago: true }).in('id', linkedIds);
+            for (const item of linkedPending) {
+              deltaSaldo('kelly', -1 * Number(item.amount || 0));
+              setPagoPor(item.id, 'kelly');
+            }
+          } catch (err) {
+            console.error('Error auto-paying Kelly payroll deductions:', err);
+          }
+        }
+      }
+
+      setTransactions(prev => prev.map(x => (x.id === id || linkedIds.includes(x.id)) ? { ...x, pago: true } : x));
 
       if (t && !isCredit && whoPaid) {
         const amount = Number(t.amount || 0);
@@ -818,7 +846,9 @@ export default function Home() {
 
         const whoName = whoPaid === 'alle' ? partner1 : partner2;
         const formatted = amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        if (t.type === 'income') {
+        if (isKellySalary && linkedIds.length > 0) {
+          toast(`Salário de Kelly recebido! Descontos em folha (Consignados, Unimed e Sindicato) efetivados automaticamente (Líquido: R$ 7.057,08).`);
+        } else if (t.type === 'income') {
           toast(`Receita de ${formatted} somada ao saldo de ${whoName}!`);
         } else {
           toast(`Despesa de ${formatted} debitada do saldo de ${whoName}!`);
@@ -881,6 +911,8 @@ export default function Home() {
   const handleTogglePaid = useCallback((id, newStatus) => {
     const t = transactions.find(x => x.id === id);
     const isCredit = isCreditTrans(t);
+    const isKellySalary = t && (t.description === 'Salário Kelly' || t.description === 'Salario Kelly');
+    const targetMonth = (t && t.date ? t.date : '').slice(0, 7);
 
     if (newStatus) {
       if (!isCredit) {
@@ -889,6 +921,32 @@ export default function Home() {
       }
       doMarkPaid(id);
       return;
+    }
+
+    let linkedUnpaidIds = [];
+    if (isKellySalary && targetMonth) {
+      const payrollDescriptions = ['Unimed SISMUSA', 'Consignado Sicoob 02', 'Consignado Sicoob 03', 'Sindicato dos Servidores'];
+      const linkedPaid = transactions.filter(x => 
+        x.id !== id && 
+        x.quem === 'Outro' && 
+        (x.date || '').slice(0, 7) === targetMonth && 
+        x.pago && 
+        payrollDescriptions.includes(x.description)
+      );
+      if (linkedPaid.length > 0) {
+        linkedUnpaidIds = linkedPaid.map(x => x.id);
+        (async () => {
+          try {
+            await supabase.from('transactions').update({ pago: false }).in('id', linkedUnpaidIds);
+            for (const item of linkedPaid) {
+              deltaSaldo('kelly', Number(item.amount || 0));
+              setPagoPor(item.id, null);
+            }
+          } catch (err) {
+            console.error('Error auto-unpaying Kelly payroll deductions:', err);
+          }
+        })();
+      }
     }
 
     if (!isCredit) {
@@ -900,7 +958,9 @@ export default function Home() {
 
         const whoName = who === 'alle' ? partner1 : partner2;
         const formatted = amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        if (t.type === 'income') {
+        if (isKellySalary && linkedUnpaidIds.length > 0) {
+          toast(`Salário e descontos em folha de Kelly desmarcados.`);
+        } else if (t.type === 'income') {
           toast(`Receita desmarcada: ${formatted} subtraído do saldo de ${whoName}.`);
         } else {
           toast(`Despesa desmarcada: ${formatted} estornado para o saldo de ${whoName}.`);
@@ -910,6 +970,9 @@ export default function Home() {
       }
     }
     doMarkUnpaid(id);
+    if (linkedUnpaidIds.length > 0) {
+      setTransactions(prev => prev.map(x => linkedUnpaidIds.includes(x.id) ? { ...x, pago: false } : x));
+    }
   }, [transactions, doMarkPaid, doMarkUnpaid, isCreditTrans, partner1, partner2, toast]);
 
   const confirmPaidWho = useCallback((who) => {
