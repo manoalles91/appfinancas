@@ -40,7 +40,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState('');
   const [online, setOnline] = useState(true);
-  const [viewDate, setViewDate] = useState(new Date());
+  const [viewDate, setViewDate] = useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [activeTab, setActiveTab] = useState('inicio');
   const [financeSubTab, setFinanceSubTab] = useState('transacoes'); // transacoes | cartoes | relatorios
   const [wishlist, setWishlist] = useState([]);
@@ -517,8 +517,7 @@ export default function Home() {
   }, [transactions]);
 
   const changeMonth = (offset) => {
-    const next = new Date(viewDate);
-    next.setMonth(next.getMonth() + offset);
+    const next = new Date(viewDate.getFullYear(), viewDate.getMonth() + offset, 1, 12, 0, 0);
     setViewDate(next);
   };
 

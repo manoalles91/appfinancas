@@ -112,8 +112,10 @@ export default function AddTransactionForm({
                 const baseDate = new Date(formData.date + 'T12:00:00');
 
                 for (let i = 0; i < totalParc; i++) {
-                    const installDate = new Date(baseDate);
-                    installDate.setMonth(installDate.getMonth() + i);
+                    const year = baseDate.getFullYear();
+                    const month = baseDate.getMonth() + i;
+                    const lastDay = new Date(year, month + 1, 0).getDate();
+                    const installDate = new Date(year, month, Math.min(baseDate.getDate(), lastDay), 12, 0, 0);
 
                     await onAdd({
                         description: formData.description,
