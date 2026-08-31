@@ -39,25 +39,24 @@ export default function TransactionList({
     const [filter, setFilter] = useState('all'); // all | income | expense | credit
     const [spenderFilter, setSpenderFilter] = useState('all'); // all | Eu | Outro | Comum | Filhos
     const [searchTerm, setSearchTerm] = useState('');
-    const [adjustFor, setAdjustFor] = useState(null);
-    const [adjustValue, setAdjustValue] = useState('');
+    const [showAllPending, setShowAllPending] = useState(false);
+    const [showAllPaid, setShowAllPaid] = useState(false);
     const [showAllPendingIncome, setShowAllPendingIncome] = useState(false);
     const [showAllPaidIncome, setShowAllPaidIncome] = useState(false);
-    const [showAllPendingExpense, setShowAllPendingExpense] = useState(false);
-    const [showAllPaidExpense, setShowAllPaidExpense] = useState(false);
+    const [adjustFor, setAdjustFor] = useState(null);
+    const [adjustValue, setAdjustValue] = useState('');
 
-    const sortedTransactions = useMemo(() => {
-        return [...transactions].sort((a, b) => {
+    const filteredTransactions = useMemo(() => {
+        const txs = Array.isArray(transactions) ? transactions : [];
+        let list = [...txs].sort((a, b) => {
             const dateA = a && a.date ? (parseLocalDate(a.date) || new Date(0)) : new Date(0);
             const dateB = b && b.date ? (parseLocalDate(b.date) || new Date(0)) : new Date(0);
             return dateB - dateA;
         });
-    }, [transactions]);
-
-    const filteredTransactions = useMemo(() => {
-        let list = sortedTransactions;
-
-        if (filter !== 'all') {
+        
+        if (selectedCardFilter) {
+            list = list.filter(t => t && t.card_name === selectedCardFilter);
+        } else if (filter !== 'all') {
             list = list.filter(t => t && t.type === filter);
         }
 
@@ -103,7 +102,7 @@ export default function TransactionList({
         }
 
         return list;
-    }, [sortedTransactions, filter, spenderFilter, searchTerm, viewDate, selectedFaturaFilter]);
+    }, [transactions, filter, spenderFilter, searchTerm, selectedCardFilter, viewDate, selectedFaturaFilter]);
 
     const pendingList = useMemo(() => filteredTransactions.filter(t => !t.pago), [filteredTransactions]);
     const paidList = useMemo(() => filteredTransactions.filter(t => t.pago), [filteredTransactions]);
@@ -121,36 +120,47 @@ export default function TransactionList({
             }
         });
 
-        const cardsSummaryList = Array.isArray(cardsSummary) ? cardsSummary : [];
-        const cardItems = Object.entries(cards).map(([cardName, items]) => {
-            const cardInfo = cardsSummaryList.find(c => c && c.nome === cardName);
+        const cardRows = Object.entries(cards).map(([cardName, items]) => {
+            const cardInfo = (cardsSummary || []).find(c => c && c.nome === cardName);
+            const sumItems = items.reduce((a, t) => a + Number(t.amount || 0), 0);
+            const amount = cardInfo && cardInfo.isAjustada ? Number(cardInfo.faturaAtual || 0) : sumItems;
             const allPaid = cardInfo ? !!cardInfo.isPaga : items.every(t => t.pago);
-            const total = cardInfo && cardInfo.faturaAtual != null 
-                ? Number(cardInfo.faturaAtual || 0) 
-                : items.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+            const isAjustada = !!(cardInfo && cardInfo.isAjustada);
 
             return {
-                id: `card-group-${cardName}-${isPaidContext ? 'paid' : 'pending'}`,
-                isCardGroup: true,
-                cardName,
-                total,
+                __cardRow: true,
+                id: 'card|' + cardName,
+                card_name: cardName,
                 items,
+                amount,
                 allPaid,
-                isPaga: cardInfo ? !!cardInfo.isPaga : allPaid,
-                isAjustada: cardInfo ? !!cardInfo.isAjustada : false,
+                isAjustada,
             };
         });
 
-        return [...cardItems, ...rest];
-    }, [cardsSummary]);
+        if ((filter === 'all' || filter === 'credit') && !selectedCardFilter && spenderFilter === 'all' && !searchTerm) {
+            (cardsSummary || []).forEach(c => {
+                if (c && c.faturaAtual > 0 && !cards[c.nome]) {
+                    const matchPaid = isPaidContext ? c.isPaga : !c.isPaga;
+                    if (matchPaid) {
+                        cardRows.push({
+                            __cardRow: true,
+                            id: 'card|' + c.nome,
+                            card_name: c.nome,
+                            items: [],
+                            amount: Number(c.faturaAtual || 0),
+                            allPaid: !!c.isPaga,
+                            isAjustada: !!c.isAjustada,
+                        });
+                    }
+                }
+            });
+        }
 
-    const consolidatedPending = useMemo(() => consolidateCards(pendingList, false), [pendingList, consolidateCards]);
-    const consolidatedPaid = useMemo(() => consolidateCards(paidList, true), [paidList, consolidateCards]);
+        return [...rest, ...cardRows];
+    }, [cardsSummary, filter, selectedCardFilter, spenderFilter, searchTerm]);
 
-    const sum = (arr) => arr.reduce((acc, t) => {
-        if (t.isCardGroup) return acc + Number(t.total || 0);
-        return acc + Number(t.amount || 0);
-    }, 0);
+    const sum = (list) => (list || []).reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
     const pendingExpenses = useMemo(() => pendingList.filter(t => t.type !== 'income'), [pendingList]);
     const paidExpenses = useMemo(() => paidList.filter(t => t.type !== 'income'), [paidList]);
@@ -158,24 +168,23 @@ export default function TransactionList({
     const pendingIncome = useMemo(() => pendingList.filter(t => t.type === 'income'), [pendingList]);
     const paidIncome = useMemo(() => paidList.filter(t => t.type === 'income'), [paidList]);
 
-    const pendingExpensesDisplay = useMemo(() => consolidatedPending.filter(t => t.type !== 'income'), [consolidatedPending]);
-    const paidExpensesDisplay = useMemo(() => consolidatedPaid.filter(t => t.type !== 'income'), [consolidatedPaid]);
+    const pendingExpenseDisplay = useMemo(() => consolidateCards(pendingExpenses, false), [pendingExpenses, consolidateCards]);
+    const paidExpenseDisplay = useMemo(() => consolidateCards(paidExpenses, true), [paidExpenses, consolidateCards]);
 
     const pendingIncomeDisplay = useMemo(() => pendingIncome, [pendingIncome]);
     const paidIncomeDisplay = useMemo(() => paidIncome, [paidIncome]);
 
-    const pendingExpenseTotal = useMemo(() => sum(pendingExpensesDisplay), [pendingExpensesDisplay]);
-    const paidExpenseTotal = useMemo(() => sum(paidExpensesDisplay), [paidExpensesDisplay]);
+    const pendingExpenseTotal = useMemo(() => sum(pendingExpenseDisplay), [pendingExpenseDisplay]);
+    const paidExpenseTotal = useMemo(() => sum(paidExpenseDisplay), [paidExpenseDisplay]);
     const pendingIncomeTotal = useMemo(() => sum(pendingIncomeDisplay), [pendingIncomeDisplay]);
     const paidIncomeTotal = useMemo(() => sum(paidIncomeDisplay), [paidIncomeDisplay]);
 
     const isIncomeFilter = filter === 'income';
-    const totalCurrentPeriod = isIncomeFilter 
-        ? pendingIncomeTotal + paidIncomeTotal 
+    const totalCurrentPeriod = isIncomeFilter
+        ? pendingIncomeTotal + paidIncomeTotal
         : pendingExpenseTotal + paidExpenseTotal;
-
-    const percentCurrentPeriod = totalCurrentPeriod > 0 
-        ? Math.round(((isIncomeFilter ? paidIncomeTotal : paidExpenseTotal) / totalCurrentPeriod) * 100) 
+    const paidRatio = totalCurrentPeriod > 0
+        ? Math.round(((isIncomeFilter ? paidIncomeTotal : paidExpenseTotal) / totalCurrentPeriod) * 100)
         : 0;
 
     const displayAmount = (val) => {
@@ -184,12 +193,12 @@ export default function TransactionList({
     };
 
     const typeConfig = {
-        expense: { color: 'text-rose-400', sign: '-' },
         income: { color: 'text-emerald-400', sign: '+' },
+        expense: { color: 'text-rose-400', sign: '-' },
         credit: { color: 'text-purple-400', sign: '-' },
     };
 
-    const typeFilterButtons = [
+    const filterButtons = [
         { value: 'all', label: 'Todos' },
         { value: 'expense', label: 'Despesas' },
         { value: 'income', label: 'Receitas' },
