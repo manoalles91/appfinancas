@@ -103,13 +103,110 @@ export default function Dashboard({
     const financeSummary = useMemo(() => {
         const monthBalance = summary.income - summary.totalExpenses;
 
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth();
+
+        const targetDate = viewDate ? (viewDate instanceof Date ? viewDate : new Date(viewDate)) : today;
+        const targetYear = targetDate.getFullYear();
+        const targetMonth = targetDate.getMonth();
+
+        const isCurrent = targetYear === currentYear && targetMonth === currentMonth;
+        const isPast = targetYear < currentYear || (targetYear === currentYear && targetMonth < currentMonth);
+        const isFuture = targetYear > currentYear || (targetYear === currentYear && targetMonth > currentMonth);
+
+        const registeredCardNames = new Set((cartoes || []).map((c) => c && c.nome).filter(Boolean));
+        const isCreditTx = (t) => t && (t.type === 'credit' || t.payment_method === 'credit' || (t.card_name && registeredCardNames.has(t.card_name)));
+
+        let ajustes = {};
+        let faturasPagas = {};
+        try {
+            if (typeof window !== 'undefined') {
+                ajustes = JSON.parse(localStorage.getItem('fincasal_ajustes_faturas')) || {};
+                faturasPagas = JSON.parse(localStorage.getItem('fincasal_faturas_pagas')) || {};
+            }
+        } catch {}
+
+        const getMonthNetPendingFlow = (y, m) => {
+            const mMatches = allTxs.filter((t) => {
+                if (!t || !t.date) return false;
+                const d = parseLocalDate(t.date);
+                if (!d) return false;
+                return d.getMonth() === m && d.getFullYear() === y;
+            });
+
+            const incomePending = mMatches
+                .filter((t) => t.type === 'income' && !t.pago)
+                .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+            const checkingPending = mMatches
+                .filter((t) => t.type === 'expense' && !isCreditTx(t) && !t.pago)
+                .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+            const monthKey = `${y}-${String(m + 1).padStart(2, '0')}`;
+            let creditPending = 0;
+
+            (cartoes || []).forEach((card) => {
+                if (!card || !card.nome) return;
+                const cardMatches = mMatches.filter((t) => t.card_name === card.nome && t.type === 'credit');
+                const soma = cardMatches.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+                const key = `${card.nome}|${monthKey}`;
+                const ajustado = ajustes[key];
+                const faturaAtual = ajustado != null ? Number(ajustado) : soma;
+                const manualPaidStatus = faturasPagas[key];
+                const isPaga = typeof manualPaidStatus === 'boolean'
+                    ? manualPaidStatus
+                    : (cardMatches.length > 0 && cardMatches.every((t) => t.pago));
+
+                if (!isPaga) {
+                    creditPending += faturaAtual;
+                }
+            });
+
+            const orphanCreditPending = mMatches
+                .filter((t) => isCreditTx(t) && !(cartoes || []).some((c) => c && c.nome === t.card_name) && !t.pago)
+                .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+            const totalPendingExpenses = checkingPending + creditPending + orphanCreditPending;
+
+            return {
+                incomePending,
+                totalPendingExpenses,
+                netPending: incomePending - totalPendingExpenses,
+            };
+        };
+
+        let cumulativePrevisto = manualSaldo;
+
+        if (isCurrent) {
+            cumulativePrevisto = manualSaldo + summary.incomePending - summary.totalPendingExpenses;
+        } else if (isFuture) {
+            let iterY = currentYear;
+            let iterM = currentMonth;
+            while (iterY < targetYear || (iterY === targetYear && iterM <= targetMonth)) {
+                const flow = getMonthNetPendingFlow(iterY, iterM);
+                cumulativePrevisto += flow.netPending;
+                iterM++;
+                if (iterM > 11) {
+                    iterM = 0;
+                    iterY++;
+                }
+            }
+        } else {
+            cumulativePrevisto = monthBalance;
+        }
+
         return {
             saldoAtual: manualSaldo,
-            previsto: monthBalance,
+            monthBalance,
+            cumulativePrevisto,
             pendingIncome: summary.incomePending,
             pendingExpense: summary.totalPendingExpenses,
+            isCurrent,
+            isFuture,
+            isPast,
         };
-    }, [summary, manualSaldo]);
+    }, [allTxs, summary, manualSaldo, viewDate, cartoes]);
 
     const dueExpenses = useMemo(() => {
         const today = new Date();
@@ -246,13 +343,29 @@ export default function Dashboard({
 
                         {/* Previsto Fim do Mês */}
                         <div className="space-y-0.5 border-l border-white/10 pl-2.5 sm:pl-4">
-                            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-indigo-300 flex items-center gap-1">
-                                <Sparkles className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-indigo-400" />
-                                Previsto ({currentMonthLabel.slice(0, 3)})
-                            </p>
-                            <p className={`text-lg sm:text-2xl font-black tracking-tight truncate ${financeSummary.previsto > 0 ? 'text-indigo-300' : financeSummary.previsto < 0 ? 'text-rose-400' : 'text-slate-300'}`}>
-                                {financeSummary.previsto > 0 ? `+${displayAmount(financeSummary.previsto)}` : displayAmount(financeSummary.previsto)}
-                            </p>
+                            <div className="flex items-center justify-between gap-1">
+                                <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-indigo-300 flex items-center gap-1">
+                                    <Sparkles className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-indigo-400" />
+                                    Previsto ({currentMonthLabel.slice(0, 3)})
+                                </p>
+                                <span
+                                    className={`text-[8.5px] sm:text-[9.5px] font-black px-1.5 py-0.5 rounded-md leading-none truncate ${
+                                        financeSummary.monthBalance >= 0
+                                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                            : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                    }`}
+                                >
+                                    {financeSummary.monthBalance >= 0 ? `+${displayAmount(financeSummary.monthBalance)}` : displayAmount(financeSummary.monthBalance)} no mês
+                                </span>
+                            </div>
+                            <div className="flex items-baseline gap-1.5">
+                                <p className={`text-lg sm:text-2xl font-black tracking-tight truncate ${financeSummary.cumulativePrevisto >= 0 ? 'text-indigo-300' : 'text-rose-400'}`}>
+                                    {displayAmount(financeSummary.cumulativePrevisto)}
+                                </p>
+                                <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold hidden xs:inline">
+                                    acumulado
+                                </span>
+                            </div>
                         </div>
                     </div>
 
