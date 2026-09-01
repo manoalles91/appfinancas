@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import Balances from '@/components/Balances';
 import Financiamentos from '@/components/Financiamentos';
-import { formatCurrency, formatDate } from '@/lib/format';
+import { formatCurrency, formatDate, parseLocalDate } from '@/lib/format';
 
 export default function Dashboard({ 
     transactions = [], 
@@ -101,15 +101,13 @@ export default function Dashboard({
     }, [txs, cardsSummary, cartoes]);
 
     const financeSummary = useMemo(() => {
-        const pendingIncome = summary.incomePending;
-        const pendingExpense = summary.totalPendingExpenses;
-        const previsto = manualSaldo + pendingIncome - pendingExpense;
+        const monthBalance = summary.income - summary.totalExpenses;
 
         return {
             saldoAtual: manualSaldo,
-            previsto,
-            pendingIncome,
-            pendingExpense,
+            previsto: monthBalance,
+            pendingIncome: summary.incomePending,
+            pendingExpense: summary.totalPendingExpenses,
         };
     }, [summary, manualSaldo]);
 
@@ -252,8 +250,8 @@ export default function Dashboard({
                                 <Sparkles className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-indigo-400" />
                                 Previsto ({currentMonthLabel.slice(0, 3)})
                             </p>
-                            <p className={`text-lg sm:text-2xl font-black tracking-tight truncate ${financeSummary.previsto >= 0 ? 'text-indigo-300' : 'text-rose-400'}`}>
-                                {displayAmount(financeSummary.previsto)}
+                            <p className={`text-lg sm:text-2xl font-black tracking-tight truncate ${financeSummary.previsto > 0 ? 'text-indigo-300' : financeSummary.previsto < 0 ? 'text-rose-400' : 'text-slate-300'}`}>
+                                {financeSummary.previsto > 0 ? `+${displayAmount(financeSummary.previsto)}` : displayAmount(financeSummary.previsto)}
                             </p>
                         </div>
                     </div>
