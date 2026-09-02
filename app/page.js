@@ -495,12 +495,31 @@ export default function Home() {
         : (matches.length > 0 && matches.every(t => t.pago));
       const limite = Number(card.limite || 0);
 
-      // Total de limite comprometido/utilizado no cartão (todas as compras e parcelas pendentes)
-      const allCardTxs = transactions.filter(t => t && t.card_name === card.nome && t.type === 'credit');
-      const allUnpaidTxs = allCardTxs.filter(t => !t.pago);
-      const sumAllUnpaid = allUnpaidTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
-      const diferencaAjuste = (!isPaga && isAjustada) ? Math.max(0, faturaAtual - soma) : 0;
-      const totalUtilizado = Math.max(0, sumAllUnpaid + diferencaAjuste);
+      // Total de limite comprometido/utilizado no cartão (todas as faturas e parcelas em aberto)
+      const cardTxs = transactions.filter(t => t && t.card_name === card.nome && t.type === 'credit');
+      const allMonths = new Set();
+      cardTxs.forEach(t => {
+        if (t.date) allMonths.add(t.date.slice(0, 7));
+      });
+      Object.keys(ajustes).forEach(k => {
+        if (k.startsWith(card.nome + '|')) allMonths.add(k.split('|')[1]);
+      });
+
+      let totalUtilizado = 0;
+      Array.from(allMonths).forEach(m => {
+        const mKey = `${card.nome}|${m}`;
+        const mMatches = cardTxs.filter(t => (t.date || '').slice(0, 7) === m);
+        const mSoma = mMatches.reduce((a, t) => a + Number(t.amount || 0), 0);
+        const mFatura = ajustes[mKey] != null ? Number(ajustes[mKey]) : mSoma;
+        const mPaidStatus = faturasPagas[mKey];
+        const mIsPaid = typeof mPaidStatus === 'boolean'
+          ? mPaidStatus
+          : (mMatches.length > 0 && mMatches.every(t => t.pago));
+
+        if (!mIsPaid && mFatura > 0) {
+          totalUtilizado += mFatura;
+        }
+      });
 
       const disponivel = Math.max(0, limite - totalUtilizado);
       const percentual = limite > 0 ? (totalUtilizado / limite) * 100 : 0;
