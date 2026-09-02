@@ -146,6 +146,7 @@ export default function Home() {
   // States para edição de transação
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editGrupo, setEditGrupo] = useState('essenciais');
+  const [pendingEditScope, setPendingEditScope] = useState(null);
 
   const openEditTransaction = (t) => {
     const gid = getGroupId(t.category);
@@ -154,10 +155,14 @@ export default function Home() {
     if (m) {
       const re = new RegExp(`^(\\d+)/${m[2]}$`);
       seriesSize = transactions.filter(x => x.id !== t.id && x.description === t.description && re.test(String(x.installment_info || ''))).length;
+    } else {
+      seriesSize = transactions.filter(x => x.id !== t.id && x.description === t.description && (x.fixa || x.type === t.type)).length;
     }
     setEditGrupo(gid || 'outra');
     setEditingTransaction({
       ...t,
+      _origDescription: t.description,
+      _origAmount: t.amount,
       amount: String(Number(t.amount || 0).toFixed(2)),
       date: (t.date || '').slice(0, 10),
       subcategoria: t.subcategoria || '',
@@ -376,7 +381,7 @@ export default function Home() {
       setLoading(true);
       setDataError('');
       const [txRes, cardsRes] = await Promise.all([
-        supabase.from('transactions').select('*').order('date', { ascending: false }),
+        supabase.from('transactions').select('*').order('date', { ascending: false }).limit(5000),
         supabase.from('cartoes').select('*'),
       ]);
       const { data: txData, error: txError } = txRes;
@@ -490,15 +495,26 @@ export default function Home() {
         : (matches.length > 0 && matches.every(t => t.pago));
       const limite = Number(card.limite || 0);
 
+      // Total de limite comprometido/utilizado no cartão (todas as compras e parcelas pendentes)
+      const allCardTxs = transactions.filter(t => t && t.card_name === card.nome && t.type === 'credit');
+      const allUnpaidTxs = allCardTxs.filter(t => !t.pago);
+      const sumAllUnpaid = allUnpaidTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+      const diferencaAjuste = (!isPaga && isAjustada) ? Math.max(0, faturaAtual - soma) : 0;
+      const totalUtilizado = Math.max(0, sumAllUnpaid + diferencaAjuste);
+
+      const disponivel = Math.max(0, limite - totalUtilizado);
+      const percentual = limite > 0 ? (totalUtilizado / limite) * 100 : 0;
+
       return {
         ...card,
         faturaAtual,
+        totalUtilizado,
         isAjustada,
         isPaga,
         totalItems: matches.length,
         purchases: matches,
-        disponivel: limite - faturaAtual,
-        percentual: limite > 0 ? (faturaAtual / limite) * 100 : 0
+        disponivel,
+        percentual,
       };
     });
   }, [cartoes, transactions, viewDate, ajusteVersion]);
@@ -1101,6 +1117,222 @@ export default function Home() {
     }
   }, [toast]);
 
+  const executeTransactionUpdate = useCallback(async (scope, editData) => {
+    if (!editData) return;
+    const { targetTx, newValues, origTx, isParcela, isFixa, parcN, parcTotal, needsSplit, valorTipo, amount } = editData;
+    const base = newValues.amount;
+    const origDesc = targetTx._origDescription || (origTx && origTx.description) || targetTx.description;
+    const targetMonth = (targetTx.date || '').slice(0, 7);
+
+    try {
+      const payload = {
+        description: newValues.description,
+        amount: base,
+        type: newValues.type,
+        date: newValues.date,
+        category: newValues.category,
+        subcategoria: newValues.subcategoria || '',
+        quem: newValues.quem || 'Comum',
+        destino: newValues.destino || '',
+        pago: !!newValues.pago,
+        fixa: !!newValues.fixa,
+        payment_method: newValues.payment_method || 'checking',
+        card_name: newValues.card_name || null,
+        installment_info: newValues.installment_info || null,
+      };
+
+      const siblingFields = {
+        description: newValues.description,
+        amount: base,
+        type: newValues.type,
+        category: newValues.category,
+        subcategoria: newValues.subcategoria || '',
+        quem: newValues.quem || 'Comum',
+        destino: newValues.destino || '',
+        payment_method: newValues.payment_method || 'checking',
+        card_name: newValues.card_name || null,
+        fixa: !!newValues.fixa,
+      };
+
+      let created = [];
+      if (needsSplit) {
+        const lastAmount = valorTipo === 'parcela'
+          ? amount
+          : Math.round((amount - base * (parcTotal - 1)) * 100) / 100;
+        const baseDate = new Date((targetTx.date || new Date().toISOString().slice(0, 10)) + 'T12:00:00');
+        const inserts = [];
+        for (let i = 1; i <= parcTotal; i++) {
+          if (i === parcN) continue;
+          const d = new Date(baseDate);
+          d.setMonth(d.getMonth() + (i - parcN));
+          inserts.push({
+            description: newValues.description,
+            amount: i === parcTotal ? lastAmount : base,
+            type: newValues.type,
+            category: newValues.category,
+            subcategoria: newValues.subcategoria || '',
+            date: d.toISOString(),
+            fixa: !!newValues.fixa,
+            pago: false,
+            payment_method: newValues.payment_method || 'checking',
+            quem: newValues.quem || 'Comum',
+            destino: newValues.destino || '',
+            installment_info: `${i}/${parcTotal}`,
+            card_name: newValues.type === 'credit' ? newValues.card_name || null : null,
+          });
+        }
+        const { data: ins, error: insErr } = await supabase.from('transactions').insert(inserts).select();
+        if (insErr) throw insErr;
+        created = ins || [];
+      }
+
+      let updatedCount = 1;
+
+      if (scope === 'single' || needsSplit) {
+        const { error } = await supabase
+          .from('transactions')
+          .update(payload)
+          .eq('id', targetTx.id);
+        if (error) throw error;
+
+        setTransactions(prev => {
+          const rest = prev.map(t => t.id === targetTx.id ? { ...t, ...payload } : t);
+          return needsSplit ? [...rest, ...created] : rest;
+        });
+
+        toast(needsSplit
+          ? `Transação dividida em ${parcTotal} parcelas mensais!`
+          : 'Transação atualizada com sucesso!');
+      } else if (scope === 'future') {
+        let siblingIds = [];
+        if (isParcela) {
+          const m = String(targetTx.installment_info || '').match(/^(\d+)\/(\d+)$/);
+          const currentN = m ? parseInt(m[1], 10) : parcN;
+          const totalN = m ? m[2] : String(parcTotal);
+          siblingIds = transactions
+            .filter(t => {
+              if (t.id === targetTx.id) return false;
+              if (t.description !== origDesc) return false;
+              const sm = String(t.installment_info || '').match(/^(\d+)\/(\d+)$/);
+              return sm && sm[2] === totalN && parseInt(sm[1], 10) >= currentN;
+            })
+            .map(t => t.id);
+        } else {
+          siblingIds = transactions
+            .filter(t => {
+              if (t.id === targetTx.id) return false;
+              if (t.description !== origDesc) return false;
+              const mDate = (t.date || '').slice(0, 7);
+              return mDate >= targetMonth;
+            })
+            .map(t => t.id);
+        }
+
+        const { error: targetErr } = await supabase
+          .from('transactions')
+          .update(payload)
+          .eq('id', targetTx.id);
+        if (targetErr) throw targetErr;
+
+        if (siblingIds.length > 0) {
+          const { error: sibErr } = await supabase
+            .from('transactions')
+            .update(siblingFields)
+            .in('id', siblingIds);
+          if (sibErr) throw sibErr;
+        }
+
+        updatedCount = 1 + siblingIds.length;
+        setTransactions(prev => prev.map(t => {
+          if (t.id === targetTx.id) return { ...t, ...payload };
+          if (siblingIds.includes(t.id)) return { ...t, ...siblingFields };
+          return t;
+        }));
+
+        toast(`Este lançamento e mais ${siblingIds.length} meses/parcelas futuras foram atualizados!`);
+      } else if (scope === 'all') {
+        let siblingIds = [];
+        if (isParcela) {
+          const m = String(targetTx.installment_info || '').match(/^(\d+)\/(\d+)$/);
+          const totalN = m ? m[2] : String(parcTotal);
+          siblingIds = transactions
+            .filter(t => {
+              if (t.id === targetTx.id) return false;
+              if (t.description !== origDesc) return false;
+              if (!totalN) return true;
+              const sm = String(t.installment_info || '').match(/^(\d+)\/(\d+)$/);
+              return sm && sm[2] === totalN;
+            })
+            .map(t => t.id);
+        } else {
+          siblingIds = transactions
+            .filter(t => {
+              if (t.id === targetTx.id) return false;
+              return t.description === origDesc && (t.fixa || t.type === targetTx.type);
+            })
+            .map(t => t.id);
+        }
+
+        const { error: targetErr } = await supabase
+          .from('transactions')
+          .update(payload)
+          .eq('id', targetTx.id);
+        if (targetErr) throw targetErr;
+
+        if (siblingIds.length > 0) {
+          const { error: sibErr } = await supabase
+            .from('transactions')
+            .update(siblingFields)
+            .in('id', siblingIds);
+          if (sibErr) throw sibErr;
+        }
+
+        updatedCount = 1 + siblingIds.length;
+        setTransactions(prev => prev.map(t => {
+          if (t.id === targetTx.id) return { ...t, ...payload };
+          if (siblingIds.includes(t.id)) return { ...t, ...siblingFields };
+          return t;
+        }));
+
+        toast(`Todas as ${updatedCount} ocorrências de "${origDesc}" foram atualizadas!`);
+      }
+
+      const isCredit = isCreditTrans(payload);
+      if (!isCredit && origTx) {
+        const wasPaid = !!origTx.pago;
+        const willBePaid = !!payload.pago;
+        const oldAmount = Number(origTx.amount || 0);
+        const newAmount = Number(payload.amount || 0);
+        const who = getPagoPor(origTx.id) || quienDeQuem(payload.quem) || 'alle';
+        const sign = payload.type === 'income' ? 1 : -1;
+
+        if (!wasPaid && willBePaid) {
+          deltaSaldo(who, sign * newAmount);
+          setPagoPor(targetTx.id, who);
+        } else if (wasPaid && !willBePaid) {
+          deltaSaldo(who, -1 * sign * oldAmount);
+          setPagoPor(targetTx.id, null);
+        } else if (wasPaid && willBePaid && oldAmount !== newAmount) {
+          deltaSaldo(who, sign * (newAmount - oldAmount));
+        }
+      }
+
+      await logAudit({
+        action: needsSplit ? 'split' : 'update',
+        entity: 'transaction',
+        entityId: targetTx.id,
+        description: (needsSplit ? `Dividido em ${parcTotal} parcelas` : `Atualizado (${scope})`) + `: ${newValues.description} (${base.toFixed(2)}) - ${updatedCount} afetados`,
+        meta: { amount: base, installment_info: payload.installment_info, scope },
+      });
+
+      setPendingEditScope(null);
+      setEditingTransaction(null);
+    } catch (error) {
+      console.error('Error updating transaction:', error.message);
+      toast('Erro ao atualizar: ' + error.message, 'error');
+    }
+  }, [transactions, toast, isCreditTrans, quienDeQuem]);
+
   const handleDeleteTransaction = useCallback(async (tx, scope = 'single') => {
     if (!tx) return;
     try {
@@ -1121,12 +1353,15 @@ export default function Home() {
       const isParcela = !!txObj.installment_info;
       const targetMonth = (txObj.date || '').slice(0, 7);
 
-      if (scope === 'single' || (!isFixa && !isParcela)) {
+      const sameDescTxs = transactions.filter(t => t.description === desc && (t.type === txObj.type || t.fixa));
+      const isRecurring = isFixa || isParcela || sameDescTxs.length > 1;
+
+      if (scope === 'single' || !isRecurring) {
         // 1. Excluir somente esta
         const { error } = await supabase.from('transactions').delete().eq('id', txObj.id);
         if (error) throw error;
         setTransactions(prev => prev.filter(t => t.id !== txObj.id));
-        toast('Transação deste mês excluída com sucesso!');
+        toast('Lançamento excluído com sucesso!');
       } else if (scope === 'future') {
         // 2. Excluir deste mês em diante
         let idsToDelete = [txObj.id];
@@ -1142,9 +1377,9 @@ export default function Home() {
             });
             idsToDelete = siblings.map(t => t.id);
           }
-        } else if (isFixa) {
+        } else {
           const matching = transactions.filter(t => {
-            if (!t.fixa || t.description !== desc) return false;
+            if (t.description !== desc) return false;
             const mDate = (t.date || '').slice(0, 7);
             return mDate >= targetMonth;
           });
@@ -1168,8 +1403,8 @@ export default function Home() {
             return sm && sm[2] === totalN;
           });
           idsToDelete = siblings.map(t => t.id);
-        } else if (isFixa) {
-          const matching = transactions.filter(t => t.fixa && t.description === desc);
+        } else {
+          const matching = transactions.filter(t => t.description === desc && (t.type === txObj.type || t.fixa));
           idsToDelete = matching.map(t => t.id);
         }
 
@@ -1185,7 +1420,7 @@ export default function Home() {
     }
   }, [transactions, toast]);
 
-  const handleUpdateTransaction = useCallback(async (e) => {
+  const handleUpdateTransaction = useCallback((e) => {
     e.preventDefault();
     if (!editingTransaction) return;
     const amount = Math.max(0, parseFloat(String(editingTransaction.amount).replace(',', '.')) || 0);
@@ -1199,146 +1434,72 @@ export default function Home() {
     const validParcela = isParcela && parcTotal >= parcN && parcTotal > 0;
     const installment_info = validParcela ? `${parcN}/${parcTotal}` : null;
 
+    const origTx = transactions.find(t => t.id === editingTransaction.id);
+    const origDesc = editingTransaction._origDescription || (origTx && origTx.description) || editingTransaction.description;
+
     let siblings = [];
     if (validParcela && parcTotal > 1) {
       const re = new RegExp(`^(\\d+)/${parcTotal}$`);
-      siblings = transactions.filter(t => t.id !== editingTransaction.id && t.description === editingTransaction.description && re.test(String(t.installment_info || '')));
+      siblings = transactions.filter(t => t.id !== editingTransaction.id && t.description === origDesc && re.test(String(t.installment_info || '')));
+    } else {
+      siblings = transactions.filter(t => t.id !== editingTransaction.id && t.description === origDesc && (t.fixa || t.type === editingTransaction.type));
     }
+
     const needsSplit = validParcela && parcTotal > 1 && siblings.length === 0;
-    const applyToAll = needsSplit ? false : !!editingTransaction.applyToAll && siblings.length > 0;
     const valorTipo = editingTransaction.valorTipo === 'parcela' ? 'parcela' : 'total';
     const base = needsSplit
       ? (valorTipo === 'parcela' ? amount : Math.round((amount / parcTotal) * 100) / 100)
       : amount;
 
-    try {
-      const payload = {
-        description: editingTransaction.description,
-        amount: base,
-        type: editingTransaction.type,
-        date: new Date((editingTransaction.date || new Date().toISOString().slice(0, 10)) + 'T12:00:00').toISOString(),
-        category: editingTransaction.category,
-        subcategoria: editingTransaction.subcategoria || '',
-        quem: editingTransaction.quem || 'Comum',
-        destino: editingTransaction.destino || '',
-        pago: !!editingTransaction.pago,
-        fixa: !!editingTransaction.fixa,
-        payment_method: editingTransaction.payment_method || 'checking',
-        card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
-        installment_info,
-      };
+    const newValues = {
+      description: editingTransaction.description,
+      amount: base,
+      type: editingTransaction.type,
+      date: new Date((editingTransaction.date || new Date().toISOString().slice(0, 10)) + 'T12:00:00').toISOString(),
+      category: editingTransaction.category,
+      subcategoria: editingTransaction.subcategoria || '',
+      quem: editingTransaction.quem || 'Comum',
+      destino: editingTransaction.destino || '',
+      pago: !!editingTransaction.pago,
+      fixa: !!editingTransaction.fixa,
+      payment_method: editingTransaction.payment_method || 'checking',
+      card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
+      installment_info,
+    };
 
-      const amountMap = {};
-      if (applyToAll) {
-        const perInstall = valorTipo === 'parcela'
-          ? amount
-          : Math.round((amount / parcTotal) * 100) / 100;
-        const lastAmount = valorTipo === 'parcela'
-          ? amount
-          : Math.round((amount - perInstall * (parcTotal - 1)) * 100) / 100;
-        [...siblings, { id: editingTransaction.id, installment_info }].forEach(s => {
-          const m2 = String(s.installment_info || '').match(/^(\d+)\/(\d+)$/);
-          const n = m2 ? parseInt(m2[1], 10) : parcN;
-          amountMap[s.id] = n === parcTotal ? lastAmount : perInstall;
-        });
-        payload.amount = amountMap[editingTransaction.id];
-      } else {
-        amountMap[editingTransaction.id] = base;
-      }
+    const isSeries = (validParcela && siblings.length > 0) || (editingTransaction.fixa && siblings.length > 0) || (siblings.length > 0);
 
-      let created = [];
-      if (needsSplit) {
-        const lastAmount = valorTipo === 'parcela'
-          ? amount
-          : Math.round((amount - base * (parcTotal - 1)) * 100) / 100;
-        const baseDate = new Date((editingTransaction.date || new Date().toISOString().slice(0, 10)) + 'T12:00:00');
-        const inserts = [];
-        for (let i = 1; i <= parcTotal; i++) {
-          if (i === parcN) continue;
-          const d = new Date(baseDate);
-          d.setMonth(d.getMonth() + (i - parcN));
-          inserts.push({
-            description: editingTransaction.description,
-            amount: i === parcTotal ? lastAmount : base,
-            type: editingTransaction.type,
-            category: editingTransaction.category,
-            subcategoria: editingTransaction.subcategoria || '',
-            date: d.toISOString(),
-            fixa: !!editingTransaction.fixa,
-            pago: false,
-            payment_method: editingTransaction.payment_method || 'checking',
-            quem: editingTransaction.quem || 'Comum',
-            destino: editingTransaction.destino || '',
-            installment_info: `${i}/${parcTotal}`,
-            card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
-          });
-        }
-        const { data: ins, error: insErr } = await supabase.from('transactions').insert(inserts).select();
-        if (insErr) throw insErr;
-        created = ins || [];
-      }
-
-      const { error } = await supabase
-        .from('transactions')
-        .update(payload)
-        .eq('id', editingTransaction.id);
-      if (error) throw error;
-
-      for (const [id, val] of Object.entries(amountMap)) {
-        const { error: upErr } = await supabase
-          .from('transactions')
-          .update({ amount: val })
-          .eq('id', id);
-        if (upErr) throw upErr;
-      }
-
-      const origTx = transactions.find(t => t.id === editingTransaction.id);
-      const isCredit = isCreditTrans(payload);
-      if (!isCredit && origTx) {
-        const wasPaid = !!origTx.pago;
-        const willBePaid = !!payload.pago;
-        const oldAmount = Number(origTx.amount || 0);
-        const newAmount = Number(payload.amount || 0);
-        const who = getPagoPor(origTx.id) || quienDeQuem(payload.quem) || 'alle';
-        const sign = payload.type === 'income' ? 1 : -1;
-
-        if (!wasPaid && willBePaid) {
-          deltaSaldo(who, sign * newAmount);
-          setPagoPor(editingTransaction.id, who);
-        } else if (wasPaid && !willBePaid) {
-          deltaSaldo(who, -1 * sign * oldAmount);
-          setPagoPor(editingTransaction.id, null);
-        } else if (wasPaid && willBePaid && oldAmount !== newAmount) {
-          deltaSaldo(who, sign * (newAmount - oldAmount));
-        }
-      }
-
-      await logAudit({
-        action: needsSplit ? 'split' : 'update',
-        entity: 'transaction',
-        entityId: editingTransaction.id,
-        description: (needsSplit ? `Dividido em ${parcTotal} parcelas` : `Atualizado`) + `: ${editingTransaction.description} (${base.toFixed(2)})`,
-        meta: { amount: base, installment_info, applyToAll: !!applyToAll },
+    if (isSeries && !needsSplit) {
+      setPendingEditScope({
+        targetTx: editingTransaction,
+        newValues,
+        origTx: origTx || editingTransaction,
+        isParcela: validParcela,
+        isFixa: !!editingTransaction.fixa,
+        parcN,
+        parcTotal,
+        siblingsCount: siblings.length,
+        valorTipo,
+        needsSplit: false,
+        amount,
       });
-
-      setTransactions(prev => {
-        const rest = prev.map(t => {
-          if (amountMap[t.id] != null) return { ...t, amount: amountMap[t.id] };
-          return t.id === editingTransaction.id ? { ...t, ...payload } : t;
-        });
-        return needsSplit ? [...rest, ...created] : rest;
-      });
-      setEditingTransaction(null);
-      toast(applyToAll
-        ? `Valor aplicado às ${parcTotal} parcelas da série!`
-        : needsSplit
-          ? `Transação dividida em ${parcTotal} parcelas mensais!`
-          : 'Transação atualizada!');
-    } catch (error) {
-      console.error('Error updating transaction:', error.message);
-      toast('Erro ao atualizar: ' + error.message, 'error');
+      return;
     }
-  }, [editingTransaction, transactions, toast, isCreditTrans, quienDeQuem]);
+
+    executeTransactionUpdate('single', {
+      targetTx: editingTransaction,
+      newValues,
+      origTx: origTx || editingTransaction,
+      isParcela: validParcela,
+      isFixa: !!editingTransaction.fixa,
+      parcN,
+      parcTotal,
+      siblingsCount: 0,
+      valorTipo,
+      needsSplit,
+      amount,
+    });
+  }, [editingTransaction, transactions, toast, executeTransactionUpdate]);
 
   const handleAddCard = async (e) => {
     e.preventDefault();
@@ -1742,11 +1903,11 @@ export default function Home() {
                               <p className="text-xs font-bold text-slate-300">R${Number(card.limite).toLocaleString('pt-BR')}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] text-red-400 uppercase font-black">Em Aberto</p>
-                              <p className="text-xs font-bold text-red-400">R${card.faturaAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                              <p className="text-[10px] text-red-400 uppercase font-black" title="Total utilizado em compras e parcelas pendentes">Utilizado</p>
+                              <p className="text-xs font-bold text-red-400">R${(card.totalUtilizado != null ? card.totalUtilizado : card.faturaAtual).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] text-emerald-400 uppercase font-black">Livre</p>
+                              <p className="text-[10px] text-emerald-400 uppercase font-black" title="Limite disponível restante no cartão">Disponível</p>
                               <p className="text-xs font-bold text-emerald-400">R${card.disponivel.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                             </div>
                           </div>
@@ -1758,9 +1919,9 @@ export default function Home() {
                                 style={{ width: `${Math.min(card.percentual, 100)}%` }}
                               />
                             </div>
-                            <div className="flex justify-between text-[10px] text-slate-500 font-bold uppercase">
-                              <span>{Math.round(card.percentual)}% utilizado</span>
-                              <span>Disponível: {Math.round(100 - card.percentual)}%</span>
+                            <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase">
+                              <span className="text-slate-300">{Math.round(card.percentual)}% utilizado</span>
+                              <span className="text-emerald-400">Disponível: {Math.max(0, Math.round(100 - card.percentual))}%</span>
                             </div>
                           </div>
 
@@ -2605,6 +2766,142 @@ export default function Home() {
         </div>
       )}
 
+      {/* Modal Inteligente de Confirmação de Escopo na Edição */}
+      {pendingEditScope && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[#1e293b] border border-indigo-500/30 w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-5 animate-scale-in text-white">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  <Edit3 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Atualizar Lançamento</h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {pendingEditScope.isFixa
+                      ? '🔁 Despesa/Receita Fixa Recorrente'
+                      : pendingEditScope.isParcela
+                        ? `📦 Lançamento Parcelado (${pendingEditScope.newValues.installment_info || pendingEditScope.targetTx.installment_info})`
+                        : '🔁 Lançamento com Repetições'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPendingEditScope(null)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl space-y-2">
+              <p className="text-sm font-bold text-white truncate">
+                {pendingEditScope.newValues.description}
+              </p>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Valor anterior:</span>
+                <span className="text-slate-400 line-through">
+                  R$ {Number(pendingEditScope.origTx.amount || 0).toFixed(2).replace('.', ',')}
+                </span>
+                <span className="text-slate-600">→</span>
+                <span className="text-emerald-400 font-black text-sm">
+                  R$ {Number(pendingEditScope.newValues.amount || 0).toFixed(2).replace('.', ',')}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-1 border-t border-white/5">
+                <span>
+                  Ref: {pendingEditScope.targetTx.date ? (() => {
+                    const p = String(pendingEditScope.targetTx.date).split('T')[0].split('-');
+                    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : pendingEditScope.targetTx.date;
+                  })() : ''}
+                </span>
+                <span>•</span>
+                <span>{pendingEditScope.newValues.category}</span>
+                {pendingEditScope.siblingsCount > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="text-indigo-400 font-semibold">{pendingEditScope.siblingsCount} repetições encontradas</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Como deseja aplicar esta alteração?
+              </p>
+
+              {/* Opção 1: Apenas este lançamento */}
+              <button
+                type="button"
+                onClick={() => executeTransactionUpdate('single', pendingEditScope)}
+                className="w-full text-left p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-500/50 transition-all flex items-start gap-3.5 cursor-pointer group shadow-sm"
+              >
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20 group-hover:scale-105 transition-all shrink-0 mt-0.5">
+                  <Calendar className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
+                    1. Apenas este lançamento
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    Altera somente o valor deste mês/parcela pontual. Os demais meses passados e futuros permanecem intactos.
+                  </p>
+                </div>
+              </button>
+
+              {/* Opção 2: Deste lançamento em diante */}
+              <button
+                type="button"
+                onClick={() => executeTransactionUpdate('future', pendingEditScope)}
+                className="w-full text-left p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-indigo-500/50 transition-all flex items-start gap-3.5 cursor-pointer group shadow-sm"
+              >
+                <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20 group-hover:scale-105 transition-all shrink-0 mt-0.5">
+                  <FastForward className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white group-hover:text-indigo-300 transition-colors">
+                    2. Deste lançamento em diante (Este e os próximos)
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    Mantém o histórico dos meses anteriores intacto e atualiza este lançamento e todos os próximos meses/parcelas futuros.
+                  </p>
+                </div>
+              </button>
+
+              {/* Opção 3: Todas as ocorrências */}
+              <button
+                type="button"
+                onClick={() => executeTransactionUpdate('all', pendingEditScope)}
+                className="w-full text-left p-3.5 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 hover:border-indigo-500/50 transition-all flex items-start gap-3.5 cursor-pointer group shadow-sm"
+              >
+                <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 group-hover:scale-105 transition-all shrink-0 mt-0.5">
+                  <RotateCcw className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-indigo-200 group-hover:text-white transition-colors">
+                    3. Todas as ocorrências (Série Completa)
+                  </p>
+                  <p className="text-xs text-indigo-300/80 mt-0.5 leading-relaxed">
+                    Aplica o novo valor em todas as ocorrências desta transação (passadas e futuras).
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setPendingEditScope(null)}
+                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all border border-slate-700 text-xs cursor-pointer"
+              >
+                CANCELAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Confirmação de Reset de Transações */}
       {isResetModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
@@ -2669,7 +2966,11 @@ export default function Home() {
       )}
 
       {/* Modal Inteligente de Exclusão de Transação */}
-      {txToDelete && (txToDelete.fixa || txToDelete.installment_info) ? (
+      {txToDelete && (
+        txToDelete.fixa ||
+        txToDelete.installment_info ||
+        transactions.filter(t => t.id !== txToDelete.id && t.description === txToDelete.description).length > 0
+      ) ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
           <div className="bg-[#1e293b] border border-red-500/30 w-full max-w-lg rounded-3xl shadow-2xl p-6 space-y-5 animate-scale-in text-white">
             <div className="flex justify-between items-center pb-3 border-b border-slate-800">
@@ -2680,7 +2981,7 @@ export default function Home() {
                 <div>
                   <h3 className="text-lg font-bold text-white">Excluir Lançamento</h3>
                   <p className="text-xs text-slate-400 font-medium">
-                    {txToDelete.fixa ? '🔁 Despesa/Receita Fixa Recorrente' : `📦 Compra Parcelada (${txToDelete.installment_info})`}
+                    {txToDelete.fixa ? '🔁 Despesa/Receita Fixa Recorrente' : txToDelete.installment_info ? `📦 Compra Parcelada (${txToDelete.installment_info})` : '🔁 Lançamento com Repetições'}
                   </p>
                 </div>
               </div>
@@ -2718,7 +3019,7 @@ export default function Home() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
-                    1. Excluir somente este mês
+                    1. Apenas este lançamento
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
                     Apaga apenas este lançamento pontual. O histórico dos meses passados e os lançamentos futuros são mantidos.
@@ -2736,10 +3037,10 @@ export default function Home() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-white group-hover:text-orange-300 transition-colors">
-                    2. Excluir deste mês em diante
+                    2. Deste lançamento em diante (Este e os próximos)
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-                    Mantém o histórico passado e cancela/apaga todos os meses futuros a partir deste lançamento.
+                    Mantém o histórico passado e cancela/apaga todos os meses ou parcelas futuras a partir deste lançamento.
                   </p>
                 </div>
               </button>
@@ -2754,7 +3055,7 @@ export default function Home() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-red-300 group-hover:text-red-200 transition-colors">
-                    3. Excluir TODAS as ocorrências (Série Completa)
+                    3. Todas as ocorrências (Série Completa)
                   </p>
                   <p className="text-xs text-red-400/80 mt-0.5 leading-relaxed">
                     Apaga completamente todas as repetições passadas e futuras desta transação.
