@@ -256,29 +256,71 @@ export default function Dashboard({
             .filter((t) => isExpense(t) && t.quem && t.quem.startsWith('Comum'))
             .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-        const p1CommonPaid = txs
-            .filter((t) => isExpense(t) && t.quem === 'Comum - Eu')
-            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        let p1CommonPaid = 0;
+        let p2CommonPaid = 0;
+        let p1PaidForP2 = 0;
+        let p2PaidForP1 = 0;
+        let p1TotalDisbursed = 0;
+        let p2TotalDisbursed = 0;
 
-        const p2CommonPaid = txs
-            .filter((t) => isExpense(t) && t.quem === 'Comum - Outro')
-            .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        txs.forEach((t) => {
+            if (!isExpense(t) || !t.pago) return;
+            const amount = Number(t.amount || 0);
+            const isCommon = t.quem && t.quem.startsWith('Comum');
+            const isP1 = t.quem === 'Eu';
+            const isP2 = t.quem === 'Outro';
+
+            let allePaid = 0;
+            let kellyPaid = 0;
+
+            if (t.pago_alle !== undefined && t.pago_alle !== null && Number(t.pago_alle) > 0) {
+                allePaid = Number(t.pago_alle);
+            } else if (t.pago_por === 'alle' || t.quem === 'Comum - Eu') {
+                allePaid = amount;
+            } else if (t.pago_por === '50_50') {
+                allePaid = Math.round((amount / 2) * 100) / 100;
+            } else if (t.pago_por === null && isP1) {
+                allePaid = amount;
+            }
+
+            if (t.pago_kelly !== undefined && t.pago_kelly !== null && Number(t.pago_kelly) > 0) {
+                kellyPaid = Number(t.pago_kelly);
+            } else if (t.pago_por === 'kelly' || t.quem === 'Comum - Outro') {
+                kellyPaid = amount;
+            } else if (t.pago_por === '50_50') {
+                kellyPaid = Math.round((amount - (Math.round((amount / 2) * 100) / 100)) * 100) / 100;
+            } else if (t.pago_por === null && isP2) {
+                kellyPaid = amount;
+            }
+
+            p1TotalDisbursed += allePaid;
+            p2TotalDisbursed += kellyPaid;
+
+            if (isCommon) {
+                p1CommonPaid += allePaid;
+                p2CommonPaid += kellyPaid;
+            } else if (isP1) {
+                if (kellyPaid > 0) p2PaidForP1 += kellyPaid;
+            } else if (isP2) {
+                if (allePaid > 0) p1PaidForP2 += allePaid;
+            }
+        });
+
+        const netAlleCredit = ((p1CommonPaid - p2CommonPaid) / 2) + p1PaidForP2 - p2PaidForP1;
+        const debtAmount = Math.abs(netAlleCredit);
 
         let debtMessage = '';
         let debtor = '';
         let creditor = '';
-        let debtAmount = 0;
 
-        if (p1CommonPaid > p2CommonPaid) {
-            debtAmount = (p1CommonPaid - p2CommonPaid) / 2;
+        if (netAlleCredit > 0.05) {
             debtor = partner2;
             creditor = partner1;
-            debtMessage = `${partner2} deve pagar ${formatCurrency(debtAmount)} a ${partner1}`;
-        } else if (p2CommonPaid > p1CommonPaid) {
-            debtAmount = (p2CommonPaid - p1CommonPaid) / 2;
+            debtMessage = `${partner2} deve transferir ${formatCurrency(debtAmount)} para ${partner1}`;
+        } else if (netAlleCredit < -0.05) {
             debtor = partner1;
             creditor = partner2;
-            debtMessage = `${partner1} deve pagar ${formatCurrency(debtAmount)} a ${partner2}`;
+            debtMessage = `${partner1} deve transferir ${formatCurrency(debtAmount)} para ${partner2}`;
         } else {
             debtMessage = 'Contas compartilhadas equilibradas!';
         }
@@ -293,8 +335,12 @@ export default function Dashboard({
             commonTotal,
             p1CommonPaid,
             p2CommonPaid,
+            p1TotalDisbursed,
+            p2TotalDisbursed,
             debtMessage,
             debtAmount,
+            debtor,
+            creditor,
             p1Percent,
             p2Percent
         };
@@ -555,6 +601,13 @@ export default function Dashboard({
                             <p className="text-[8px] sm:text-[9px] text-teal-400 uppercase font-black truncate">Comum</p>
                             <p className="text-xs sm:text-base font-black text-white truncate">{displayAmount(coupleSummary.commonTotal)}</p>
                         </div>
+                    </div>
+
+                    <div className="pt-1 flex items-center justify-between text-[10px] text-slate-400 border-t border-white/5">
+                        <span className="font-medium">Desembolso real pago:</span>
+                        <span className="font-bold text-slate-300">
+                            {partner1}: <span className="text-purple-300">{displayAmount(coupleSummary.p1TotalDisbursed)}</span> • {partner2}: <span className="text-rose-300">{displayAmount(coupleSummary.p2TotalDisbursed)}</span>
+                        </span>
                     </div>
                 </CardContent>
             </Card>

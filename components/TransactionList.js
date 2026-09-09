@@ -216,26 +216,50 @@ export default function TransactionList({
         return due < today;
     };
 
-    const getSpenderBadge = (quem) => {
+    const getSpenderBadge = (itemOrQuem) => {
+        const t = typeof itemOrQuem === 'object' && itemOrQuem !== null ? itemOrQuem : null;
+        const quem = t ? t.quem : itemOrQuem;
+        const isPaid = t ? !!t.pago : false;
+        const pagoPor = t ? t.pago_por : null;
+        const pagoAlle = Number(t?.pago_alle || 0);
+        const pagoKelly = Number(t?.pago_kelly || 0);
+
+        let respBadge = null;
         if (quem === 'Eu') {
-            return <span className="text-[8px] sm:text-[9px] font-black uppercase bg-purple-500/15 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/30">{partner1}</span>;
+            respBadge = <span className="text-[8px] sm:text-[9px] font-black uppercase bg-purple-500/15 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/30">{partner1}</span>;
+        } else if (quem === 'Outro') {
+            respBadge = <span className="text-[8px] sm:text-[9px] font-black uppercase bg-rose-500/15 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/30">{partner2}</span>;
+        } else if (quem === 'Comum - Eu') {
+            respBadge = <span className="text-[8px] sm:text-[9px] font-black uppercase bg-teal-500/15 text-teal-300 px-1.5 py-0.5 rounded border border-teal-500/30">Comum ({partner1})</span>;
+        } else if (quem === 'Comum - Outro') {
+            respBadge = <span className="text-[8px] sm:text-[9px] font-black uppercase bg-amber-500/15 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">Comum ({partner2})</span>;
+        } else if (quem === 'Filhos' || quem === 'Comum - Filhos') {
+            respBadge = <span className="text-[8px] sm:text-[9px] font-black uppercase bg-cyan-500/15 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-500/30">👶 Filhos</span>;
+        } else if (quem === 'Comum') {
+            respBadge = <span className="text-[8px] sm:text-[9px] font-black uppercase bg-slate-500/15 text-slate-300 px-1.5 py-0.5 rounded border border-slate-500/30">Comum</span>;
         }
-        if (quem === 'Outro') {
-            return <span className="text-[8px] sm:text-[9px] font-black uppercase bg-rose-500/15 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/30">{partner2}</span>;
+
+        let paidBadge = null;
+        if (isPaid && t && t.type !== 'credit') {
+            if (pagoPor === '50_50' || (pagoAlle > 0 && pagoKelly > 0 && Math.abs(pagoAlle - pagoKelly) < 0.05)) {
+                paidBadge = <span className="text-[8px] sm:text-[9px] font-extrabold uppercase bg-emerald-500/15 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">⚖️ 50/50</span>;
+            } else if (pagoPor === 'alle' || (pagoAlle > 0 && pagoKelly === 0)) {
+                paidBadge = <span className="text-[8px] sm:text-[9px] font-extrabold uppercase bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/40">Pago {partner1}</span>;
+            } else if (pagoPor === 'kelly' || (pagoKelly > 0 && pagoAlle === 0)) {
+                paidBadge = <span className="text-[8px] sm:text-[9px] font-extrabold uppercase bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/40">Pago {partner2}</span>;
+            } else if (pagoPor === 'custom' || (pagoAlle > 0 && pagoKelly > 0)) {
+                paidBadge = <span className="text-[8px] sm:text-[9px] font-extrabold uppercase bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-500/40">Rateio: {partner1} R${pagoAlle.toFixed(0)} / {partner2} R${pagoKelly.toFixed(0)}</span>;
+            }
         }
-        if (quem === 'Comum - Eu') {
-            return <span className="text-[8px] sm:text-[9px] font-black uppercase bg-teal-500/15 text-teal-300 px-1.5 py-0.5 rounded border border-teal-500/30">Comum ({partner1})</span>;
-        }
-        if (quem === 'Comum - Outro') {
-            return <span className="text-[8px] sm:text-[9px] font-black uppercase bg-amber-500/15 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">Comum ({partner2})</span>;
-        }
-        if (quem === 'Filhos' || quem === 'Comum - Filhos') {
-            return <span className="text-[8px] sm:text-[9px] font-black uppercase bg-cyan-500/15 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-500/30">👶 Filhos</span>;
-        }
-        if (quem === 'Comum') {
-            return <span className="text-[8px] sm:text-[9px] font-black uppercase bg-slate-500/15 text-slate-300 px-1.5 py-0.5 rounded border border-slate-500/30">Comum</span>;
-        }
-        return null;
+
+        if (!respBadge && !paidBadge) return null;
+
+        return (
+            <span className="inline-flex items-center gap-1 flex-wrap">
+                {respBadge}
+                {paidBadge}
+            </span>
+        );
     };
 
     const renderItem = (t) => {
@@ -311,7 +335,7 @@ export default function TransactionList({
                             <p className={`text-xs sm:text-sm font-bold text-slate-100 truncate max-w-[170px] sm:max-w-none ${isPaid ? 'line-through text-slate-400' : ''}`}>
                                 {t.description}
                             </p>
-                            {getSpenderBadge(t.quem)}
+                            {getSpenderBadge(t)}
                         </div>
 
                         <div className="flex items-center gap-1 mt-0.5 text-[10px] text-slate-400 flex-wrap">

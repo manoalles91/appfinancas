@@ -39,7 +39,9 @@ export default function AddTransactionForm({
     initialType = null,
     onSuccess
 }) {
-    const [quemPagou, setQuemPagou] = useState('Dividido');
+    const [pagoPor, setPagoPor] = useState('50_50');
+    const [customPagoAlle, setCustomPagoAlle] = useState('');
+    const [customPagoKelly, setCustomPagoKelly] = useState('');
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [selectedGroup, setSelectedGroup] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -85,10 +87,26 @@ export default function AddTransactionForm({
         }
 
         let finalQuem = formData.quem;
-        if (formData.quem === 'Comum') {
-            if (quemPagou === 'Eu') finalQuem = 'Comum - Eu';
-            else if (quemPagou === 'Outro') finalQuem = 'Comum - Outro';
-            else finalQuem = 'Comum';
+
+        let pagoAlle = 0;
+        let pagoKelly = 0;
+        let finalPagoPor = null;
+
+        if (formData.pago) {
+            finalPagoPor = pagoPor;
+            if (pagoPor === 'alle') {
+                pagoAlle = baseAmount;
+                pagoKelly = 0;
+            } else if (pagoPor === 'kelly') {
+                pagoAlle = 0;
+                pagoKelly = baseAmount;
+            } else if (pagoPor === '50_50') {
+                pagoAlle = Math.round((baseAmount / 2) * 100) / 100;
+                pagoKelly = Math.round((baseAmount - pagoAlle) * 100) / 100;
+            } else if (pagoPor === 'custom') {
+                pagoAlle = parseFloat(String(customPagoAlle).replace(',', '.')) || 0;
+                pagoKelly = parseFloat(String(customPagoKelly).replace(',', '.')) || 0;
+            }
         }
 
         try {
@@ -117,6 +135,7 @@ export default function AddTransactionForm({
                     const lastDay = new Date(year, month + 1, 0).getDate();
                     const installDate = new Date(year, month, Math.min(baseDate.getDate(), lastDay), 12, 0, 0);
 
+                    const isFirst = i === 0;
                     await onAdd({
                         description: formData.description,
                         amount: i === totalParc - 1 ? lastAmount : installmentAmount,
@@ -125,11 +144,14 @@ export default function AddTransactionForm({
                         date: installDate.toISOString(),
                         cardName: formData.type === 'credit' ? formData.cardName : undefined,
                         installmentInfo: `${i + 1}/${totalParc}`,
-                        pago: i === 0 ? formData.pago : false,
+                        pago: isFirst ? formData.pago : false,
                         payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
                         quem: finalQuem,
                         subcategoria: formData.subcategoria,
                         destino: formData.destino,
+                        pago_por: isFirst ? finalPagoPor : null,
+                        pago_alle: isFirst ? pagoAlle : 0,
+                        pago_kelly: isFirst ? pagoKelly : 0,
                     });
                 }
                 toast(`${formData.type === 'income' ? 'Receita' : 'Despesa'} parcelada em ${totalParc}x salva!`);
@@ -141,6 +163,7 @@ export default function AddTransactionForm({
                     const month = baseDate.getMonth() + i;
                     const lastDay = new Date(year, month + 1, 0).getDate();
                     const recDate = new Date(year, month, Math.min(baseDate.getDate(), lastDay), 12, 0, 0);
+                    const isFirst = i === 0;
                     payloads.push({
                         description: formData.description,
                         amount: baseAmount,
@@ -148,11 +171,14 @@ export default function AddTransactionForm({
                         category: formData.category || (formData.type === 'income' ? 'Salário' : 'Fixa'),
                         date: recDate.toISOString(),
                         fixa: true,
-                        pago: i === 0 ? formData.pago : false,
+                        pago: isFirst ? formData.pago : false,
                         payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
                         quem: finalQuem,
                         subcategoria: formData.subcategoria,
                         destino: formData.destino,
+                        pago_por: isFirst ? finalPagoPor : null,
+                        pago_alle: isFirst ? pagoAlle : 0,
+                        pago_kelly: isFirst ? pagoKelly : 0,
                     });
                 }
                 await onAddMany(payloads, `${formData.type === 'income' ? 'Entrada' : 'Despesa'} fixa criada para os próximos 24 meses!`);
@@ -170,11 +196,16 @@ export default function AddTransactionForm({
                     quem: finalQuem,
                     subcategoria: formData.subcategoria,
                     destino: formData.destino,
+                    pago_por: finalPagoPor,
+                    pago_alle: pagoAlle,
+                    pago_kelly: pagoKelly,
                 });
                 toast('Lançamento registrado com sucesso!');
             }
 
-            setQuemPagou('Dividido');
+            setPagoPor('50_50');
+            setCustomPagoAlle('');
+            setCustomPagoKelly('');
             setFormData(initialForm());
             setShowAdvanced(false);
             setSelectedGroup('');
@@ -367,6 +398,84 @@ export default function AddTransactionForm({
                                         </button>
                                     </div>
                                 </div>
+
+                                {/* Se marcado como JÁ PAGO: escolher quem pagou */}
+                                {formData.pago && (
+                                    <div className="space-y-2 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 animate-fade-in">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                                                Quem realizou o pagamento?
+                                            </label>
+                                            <span className="text-[10px] text-emerald-400 font-medium">
+                                                {pagoPor === '50_50' ? '50% cada um' : pagoPor === 'alle' ? `100% ${partner1}` : pagoPor === 'kelly' ? `100% ${partner2}` : 'Personalizado'}
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                                            {[
+                                                { value: '50_50', label: '⚖️ 50/50' },
+                                                { value: 'alle', label: `💜 ${partner1}` },
+                                                { value: 'kelly', label: `💖 ${partner2}` },
+                                                { value: 'custom', label: '✏️ Rateio' },
+                                            ].map((opt) => (
+                                                <button
+                                                    key={opt.value}
+                                                    type="button"
+                                                    onClick={() => setPagoPor(opt.value)}
+                                                    className={`py-2 px-1 rounded-xl text-xs font-black border transition-all cursor-pointer truncate ${
+                                                        pagoPor === opt.value
+                                                            ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-500/30'
+                                                            : 'bg-[#0a0e1a] text-slate-400 border-white/10 hover:text-white hover:bg-white/5'
+                                                    }`}
+                                                >
+                                                    {opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {pagoPor === 'custom' && (
+                                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-emerald-500/20">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-purple-300 uppercase">Pago por {partner1} (R$)</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        placeholder="0,00"
+                                                        value={customPagoAlle}
+                                                        onChange={(e) => {
+                                                            const v = e.target.value;
+                                                            setCustomPagoAlle(v);
+                                                            const num = parseFloat(v) || 0;
+                                                            const total = parseFloat(String(formData.amount).replace(',', '.')) || 0;
+                                                            if (total > 0 && num <= total) {
+                                                                setCustomPagoKelly((total - num).toFixed(2));
+                                                            }
+                                                        }}
+                                                        className="w-full bg-[#0a0e1a] border border-purple-500/30 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-purple-400"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-rose-300 uppercase">Pago por {partner2} (R$)</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        placeholder="0,00"
+                                                        value={customPagoKelly}
+                                                        onChange={(e) => {
+                                                            const v = e.target.value;
+                                                            setCustomPagoKelly(v);
+                                                            const num = parseFloat(v) || 0;
+                                                            const total = parseFloat(String(formData.amount).replace(',', '.')) || 0;
+                                                            if (total > 0 && num <= total) {
+                                                                setCustomPagoAlle((total - num).toFixed(2));
+                                                            }
+                                                        }}
+                                                        className="w-full bg-[#0a0e1a] border border-rose-500/30 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-rose-400"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Cartão de Crédito (quando type = credit ou meio de pagamento cartão) */}
                                 {(formData.type === 'credit' || formData.payment_method === 'credit') && cartoes.length > 0 && (

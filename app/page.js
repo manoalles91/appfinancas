@@ -123,6 +123,9 @@ export default function Home() {
 
   // Saldo automático: modal "Quem pagou/recebeu?"
   const [pendingPaidTx, setPendingPaidTx] = useState(null);
+  const [customPayMode, setCustomPayMode] = useState(false);
+  const [customPayAlle, setCustomPayAlle] = useState('');
+  const [customPayKelly, setCustomPayKelly] = useState('');
   const [pendingPayInvoice, setPendingPayInvoice] = useState(null);
 
   const getAjustesFaturas = () => {
@@ -585,17 +588,29 @@ export default function Home() {
         quem: newTransaction.quem || 'Comum',
         subcategoria: newTransaction.subcategoria || '',
         destino: newTransaction.destino || '',
-        ajuste: newTransaction.ajuste || 0
+        ajuste: newTransaction.ajuste || 0,
+        pago_por: newTransaction.pago_por || null,
+        pago_alle: newTransaction.pago_alle !== undefined ? newTransaction.pago_alle : 0,
+        pago_kelly: newTransaction.pago_kelly !== undefined ? newTransaction.pago_kelly : 0,
       }])
       .select();
     if (error) throw error;
 
     const inserted = data && data[0];
     if (inserted && inserted.pago && !isCreditTrans(inserted)) {
-      const who = quienDeQuem(inserted.quem) || 'alle';
-      const amount = Number(inserted.amount || 0);
-      deltaSaldo(who, (inserted.type === 'income' ? 1 : -1) * amount);
-      setPagoPor(inserted.id, who);
+      const isIncome = inserted.type === 'income';
+      const sign = isIncome ? 1 : -1;
+      const alleVal = Number(inserted.pago_alle || 0);
+      const kellyVal = Number(inserted.pago_kelly || 0);
+
+      if (alleVal > 0) deltaSaldo('alle', sign * alleVal);
+      if (kellyVal > 0) deltaSaldo('kelly', sign * kellyVal);
+      if (alleVal === 0 && kellyVal === 0) {
+        const who = quienDeQuem(inserted.quem) || 'alle';
+        const amount = Number(inserted.amount || 0);
+        deltaSaldo(who, sign * amount);
+      }
+      setPagoPor(inserted.id, inserted.pago_por || (alleVal > 0 && kellyVal > 0 ? '50_50' : alleVal > 0 ? 'alle' : 'kelly'));
     }
 
     setTransactions(prev => [data[0], ...prev]);
@@ -645,9 +660,17 @@ export default function Home() {
       }
       const first = items && items[0];
       if (first && first.pago && !isCreditTrans(first)) {
-        const who = quienDeQuem(first.quem) || 'alle';
-        const amount = Number(first.amount || 0);
-        deltaSaldo(who, (first.type === 'income' ? 1 : -1) * amount);
+        const isIncome = first.type === 'income';
+        const sign = isIncome ? 1 : -1;
+        const alleVal = Number(first.pago_alle || 0);
+        const kellyVal = Number(first.pago_kelly || 0);
+        if (alleVal > 0) deltaSaldo('alle', sign * alleVal);
+        if (kellyVal > 0) deltaSaldo('kelly', sign * kellyVal);
+        if (alleVal === 0 && kellyVal === 0) {
+          const who = quienDeQuem(first.quem) || 'alle';
+          const amount = Number(first.amount || 0);
+          deltaSaldo(who, sign * amount);
+        }
       }
       await fetchData();
       toast(successMessage || `${items.length} transações adicionadas!`);
@@ -825,11 +848,19 @@ export default function Home() {
 
         const who = getPagoPor(`fatura|${key}`);
         if (who && faturaTotal > 0) {
-          deltaSaldo(who, faturaTotal);
+          if (who === '50_50') {
+            const half = Math.round((faturaTotal / 2) * 100) / 100;
+            const rest = Math.round((faturaTotal - half) * 100) / 100;
+            deltaSaldo('alle', half);
+            deltaSaldo('kelly', rest);
+            toast(`Fatura do ${cardName} reaberta: valores estornados aos saldos de ${partner1} e ${partner2}.`);
+          } else {
+            deltaSaldo(who, faturaTotal);
+            const whoName = who === 'alle' ? partner1 : partner2;
+            const formatted = faturaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            toast(`Fatura do ${cardName} reaberta: ${formatted} estornado para o saldo de ${whoName}.`);
+          }
           setPagoPor(`fatura|${key}`, null);
-          const whoName = who === 'alle' ? partner1 : partner2;
-          const formatted = faturaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-          toast(`Fatura do ${cardName} reaberta: ${formatted} estornado para o saldo de ${whoName}.`);
         } else {
           toast(`Fatura do ${cardName} reaberta.`);
         }
@@ -867,16 +898,26 @@ export default function Home() {
       saveCloudSetting('faturas_pagas', faturasPagas);
 
       if (whoPaid && faturaTotal > 0) {
-        deltaSaldo(whoPaid, -faturaTotal);
-        setPagoPor(`fatura|${key}`, whoPaid);
+        if (whoPaid === '50_50') {
+          const half = Math.round((faturaTotal / 2) * 100) / 100;
+          const rest = Math.round((faturaTotal - half) * 100) / 100;
+          deltaSaldo('alle', -half);
+          deltaSaldo('kelly', -rest);
+          setPagoPor(`fatura|${key}`, '50_50');
+          const fmtHalf = half.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          toast(`Fatura do ${cardName} paga e dividida 50/50 (${fmtHalf} de cada saldo)!`);
+        } else {
+          deltaSaldo(whoPaid, -faturaTotal);
+          setPagoPor(`fatura|${key}`, whoPaid);
+          const whoName = whoPaid === 'alle' ? partner1 : partner2;
+          const formatted = faturaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          toast(`Fatura do ${cardName} (${formatted}) paga e debitada do saldo de ${whoName}!`);
+        }
       }
 
       setAjusteVersion(v => v + 1);
 
-      const whoName = whoPaid === 'alle' ? partner1 : partner2;
-      const formatted = faturaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-      toast(`Fatura do ${cardName} (${formatted}) paga e debitada do saldo de ${whoName}!`);
-      await logAudit({ action: 'pay_invoice', entity: 'card', entityId: key, description: `Fatura ${cardName} paga por ${whoName}` });
+      await logAudit({ action: 'pay_invoice', entity: 'card', entityId: key, description: `Fatura ${cardName} paga (${whoPaid})` });
     } catch (error) {
       console.error('Error paying invoice:', error.message);
       toast('Erro ao pagar fatura: ' + error.message, 'error');
@@ -920,16 +961,61 @@ export default function Home() {
       : `Ajuste da fatura de ${reajusteFatura.cardName} removido.`);
   }, [reajusteFatura, toast]);
 
-  const doMarkPaid = useCallback(async (id, whoPaid) => {
+  const doMarkPaid = useCallback(async (id, paymentData) => {
     const t = transactions.find(x => x.id === id);
+    if (!t) return;
     const isCredit = isCreditTrans(t);
-    const isKellySalary = t && (t.description === 'Salário Kelly' || t.description === 'Salario Kelly');
-    const targetMonth = (t && t.date ? t.date : '').slice(0, 7);
+    const isKellySalary = (t.description === 'Salário Kelly' || t.description === 'Salario Kelly');
+    const targetMonth = (t.date || '').slice(0, 7);
+    const amount = Number(t.amount || 0);
+
+    let whoPaid = '50_50';
+    let alleAmount = 0;
+    let kellyAmount = 0;
+
+    if (typeof paymentData === 'string') {
+      if (paymentData === 'alle') {
+        whoPaid = 'alle';
+        alleAmount = amount;
+        kellyAmount = 0;
+      } else if (paymentData === 'kelly') {
+        whoPaid = 'kelly';
+        alleAmount = 0;
+        kellyAmount = amount;
+      } else {
+        whoPaid = '50_50';
+        alleAmount = Math.round((amount / 2) * 100) / 100;
+        kellyAmount = Math.round((amount - alleAmount) * 100) / 100;
+      }
+    } else if (paymentData && typeof paymentData === 'object') {
+      whoPaid = paymentData.whoPaid || '50_50';
+      alleAmount = Number(paymentData.alleAmount || 0);
+      kellyAmount = Number(paymentData.kellyAmount || 0);
+    } else {
+      if (t.quem === 'Eu') {
+        whoPaid = 'alle';
+        alleAmount = amount;
+        kellyAmount = 0;
+      } else if (t.quem === 'Outro') {
+        whoPaid = 'kelly';
+        alleAmount = 0;
+        kellyAmount = amount;
+      } else {
+        whoPaid = '50_50';
+        alleAmount = Math.round((amount / 2) * 100) / 100;
+        kellyAmount = Math.round((amount - alleAmount) * 100) / 100;
+      }
+    }
 
     try {
       const { error } = await supabase
         .from('transactions')
-        .update({ pago: true })
+        .update({
+          pago: true,
+          pago_por: whoPaid,
+          pago_alle: alleAmount,
+          pago_kelly: kellyAmount
+        })
         .eq('id', id);
       if (error) throw error;
 
@@ -946,7 +1032,12 @@ export default function Home() {
         if (linkedPending.length > 0) {
           linkedIds = linkedPending.map(x => x.id);
           try {
-            await supabase.from('transactions').update({ pago: true }).in('id', linkedIds);
+            await supabase.from('transactions').update({
+              pago: true,
+              pago_por: 'kelly',
+              pago_alle: 0,
+              pago_kelly: item.amount
+            }).in('id', linkedIds);
             for (const item of linkedPending) {
               deltaSaldo('kelly', -1 * Number(item.amount || 0));
               setPagoPor(item.id, 'kelly');
@@ -957,27 +1048,52 @@ export default function Home() {
         }
       }
 
-      setTransactions(prev => prev.map(x => (x.id === id || linkedIds.includes(x.id)) ? { ...x, pago: true } : x));
+      setTransactions(prev => prev.map(x => {
+        if (x.id === id) {
+          return {
+            ...x,
+            pago: true,
+            pago_por: whoPaid,
+            pago_alle: alleAmount,
+            pago_kelly: kellyAmount
+          };
+        }
+        if (linkedIds.includes(x.id)) {
+          return {
+            ...x,
+            pago: true,
+            pago_por: 'kelly',
+            pago_alle: 0,
+            pago_kelly: Number(x.amount || 0)
+          };
+        }
+        return x;
+      }));
 
-      if (t && !isCredit && whoPaid) {
-        const amount = Number(t.amount || 0);
-        deltaSaldo(whoPaid, (t.type === 'income' ? 1 : -1) * amount);
+      if (t && !isCredit) {
+        const isIncome = t.type === 'income';
+        const sign = isIncome ? 1 : -1;
+        if (alleAmount > 0) deltaSaldo('alle', sign * alleAmount);
+        if (kellyAmount > 0) deltaSaldo('kelly', sign * kellyAmount);
         setPagoPor(id, whoPaid);
 
-        const whoName = whoPaid === 'alle' ? partner1 : partner2;
-        const formatted = amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const fmt = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         if (isKellySalary && linkedIds.length > 0) {
-          toast(`Salário de Kelly recebido! Descontos em folha (Consignados, Unimed e Sindicato) efetivados automaticamente (Líquido: R$ 7.057,08).`);
-        } else if (t.type === 'income') {
-          toast(`Receita de ${formatted} somada ao saldo de ${whoName}!`);
+          toast(`Salário de Kelly recebido! Descontos em folha efetivados automaticamente.`);
+        } else if (whoPaid === '50_50') {
+          toast(`${isIncome ? 'Receita' : 'Despesa'} dividida 50/50: ${fmt(alleAmount)} no saldo de ${partner1} e ${fmt(kellyAmount)} no de ${partner2}!`);
+        } else if (whoPaid === 'custom') {
+          toast(`${isIncome ? 'Receita' : 'Despesa'} registrada com rateio: ${partner1} ${fmt(alleAmount)} | ${partner2} ${fmt(kellyAmount)}.`);
         } else {
-          toast(`Despesa de ${formatted} debitada do saldo de ${whoName}!`);
+          const whoName = whoPaid === 'alle' ? partner1 : partner2;
+          const paidVal = whoPaid === 'alle' ? alleAmount : kellyAmount;
+          toast(`${isIncome ? 'Receita' : 'Despesa'} de ${fmt(paidVal)} registrada no saldo de ${whoName}!`);
         }
       } else {
         toast('Transação marcada como paga!');
       }
 
-      await logAudit({ action: 'mark_paid', entity: 'transaction', entityId: id, description: 'Marcado como pago' });
+      await logAudit({ action: 'mark_paid', entity: 'transaction', entityId: id, description: `Marcado como pago (${whoPaid})` });
 
       if (t && t.fixa && !t.installment_info) {
         const d = new Date((t.date || '').slice(0, 10) + 'T12:00:00');
@@ -1001,6 +1117,9 @@ export default function Home() {
               subcategoria: t.subcategoria || '',
               destino: t.destino || '',
               card_name: t.type === 'credit' ? t.card_name || null : null,
+              pago_por: null,
+              pago_alle: 0,
+              pago_kelly: 0,
             }])
             .select();
           if (insErr) throw insErr;
@@ -1017,10 +1136,21 @@ export default function Home() {
     try {
       const { error } = await supabase
         .from('transactions')
-        .update({ pago: false })
+        .update({
+          pago: false,
+          pago_por: null,
+          pago_alle: 0,
+          pago_kelly: 0
+        })
         .eq('id', id);
       if (error) throw error;
-      setTransactions(prev => prev.map(t => t.id === id ? { ...t, pago: false } : t));
+      setTransactions(prev => prev.map(t => t.id === id ? {
+        ...t,
+        pago: false,
+        pago_por: null,
+        pago_alle: 0,
+        pago_kelly: 0
+      } : t));
       await logAudit({ action: 'mark_unpaid', entity: 'transaction', entityId: id, description: 'Marcado como não pago' });
     } catch (error) {
       console.error('Error updating transaction status:', error.message);
@@ -1057,7 +1187,12 @@ export default function Home() {
         linkedUnpaidIds = linkedPaid.map(x => x.id);
         (async () => {
           try {
-            await supabase.from('transactions').update({ pago: false }).in('id', linkedUnpaidIds);
+            await supabase.from('transactions').update({
+              pago: false,
+              pago_por: null,
+              pago_alle: 0,
+              pago_kelly: 0
+            }).in('id', linkedUnpaidIds);
             for (const item of linkedPaid) {
               deltaSaldo('kelly', Number(item.amount || 0));
               setPagoPor(item.id, null);
@@ -1069,40 +1204,56 @@ export default function Home() {
       }
     }
 
-    if (!isCredit) {
-      const who = getPagoPor(id);
-      if (who && t) {
-        const amount = Number(t.amount || 0);
-        deltaSaldo(who, (t.type === 'income' ? -1 : 1) * amount);
-        setPagoPor(id, null);
+    if (!isCredit && t) {
+      const isIncome = t.type === 'income';
+      const sign = isIncome ? -1 : 1;
+      const alleVal = Number(t.pago_alle || 0);
+      const kellyVal = Number(t.pago_kelly || 0);
 
-        const whoName = who === 'alle' ? partner1 : partner2;
-        const formatted = amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        if (isKellySalary && linkedUnpaidIds.length > 0) {
-          toast(`Salário e descontos em folha de Kelly desmarcados.`);
-        } else if (t.type === 'income') {
-          toast(`Receita desmarcada: ${formatted} subtraído do saldo de ${whoName}.`);
-        } else {
-          toast(`Despesa desmarcada: ${formatted} estornado para o saldo de ${whoName}.`);
-        }
+      if (alleVal > 0 || kellyVal > 0) {
+        if (alleVal > 0) deltaSaldo('alle', sign * alleVal);
+        if (kellyVal > 0) deltaSaldo('kelly', sign * kellyVal);
+        setPagoPor(id, null);
+        toast('Transação desmarcada: valores estornados aos saldos em conta.');
       } else {
-        toast('Transação marcada como pendente.');
+        const who = getPagoPor(id) || (t.quem === 'Eu' ? 'alle' : t.quem === 'Outro' ? 'kelly' : null);
+        if (who) {
+          const amount = Number(t.amount || 0);
+          deltaSaldo(who, sign * amount);
+          setPagoPor(id, null);
+          const whoName = who === 'alle' ? partner1 : partner2;
+          toast(`Transação desmarcada: estornado para o saldo de ${whoName}.`);
+        } else {
+          toast('Transação marcada como pendente.');
+        }
       }
     }
     doMarkUnpaid(id);
     if (linkedUnpaidIds.length > 0) {
-      setTransactions(prev => prev.map(x => linkedUnpaidIds.includes(x.id) ? { ...x, pago: false } : x));
+      setTransactions(prev => prev.map(x => linkedUnpaidIds.includes(x.id) ? {
+        ...x,
+        pago: false,
+        pago_por: null,
+        pago_alle: 0,
+        pago_kelly: 0
+      } : x));
     }
   }, [transactions, doMarkPaid, doMarkUnpaid, isCreditTrans, partner1, partner2, toast]);
 
-  const confirmPaidWho = useCallback((who) => {
+  const confirmPaidWho = useCallback((paymentData) => {
     const id = pendingPaidTx;
     setPendingPaidTx(null);
-    if (id) doMarkPaid(id, who);
+    setCustomPayMode(false);
+    setCustomPayAlle('');
+    setCustomPayKelly('');
+    if (id) doMarkPaid(id, paymentData);
   }, [pendingPaidTx, doMarkPaid]);
 
   const cancelPaidWho = useCallback(() => {
     setPendingPaidTx(null);
+    setCustomPayMode(false);
+    setCustomPayAlle('');
+    setCustomPayKelly('');
   }, []);
 
   const handleAdjustAmount = useCallback(async (id, amount) => {
@@ -1144,6 +1295,31 @@ export default function Home() {
     const targetMonth = (targetTx.date || '').slice(0, 7);
 
     try {
+      const isPaid = !!newValues.pago;
+      let pagoPorVal = targetTx.pago_por;
+      let pagoAlleVal = targetTx.pago_alle !== undefined ? Number(targetTx.pago_alle) : 0;
+      let pagoKellyVal = targetTx.pago_kelly !== undefined ? Number(targetTx.pago_kelly) : 0;
+
+      if (!isPaid) {
+        pagoPorVal = null;
+        pagoAlleVal = 0;
+        pagoKellyVal = 0;
+      } else if (newValues.pago_por) {
+        pagoPorVal = newValues.pago_por;
+        pagoAlleVal = Number(newValues.pago_alle || 0);
+        pagoKellyVal = Number(newValues.pago_kelly || 0);
+      } else if (!pagoPorVal) {
+        if (newValues.quem === 'Eu') {
+          pagoPorVal = 'alle'; pagoAlleVal = base; pagoKellyVal = 0;
+        } else if (newValues.quem === 'Outro') {
+          pagoPorVal = 'kelly'; pagoAlleVal = 0; pagoKellyVal = base;
+        } else {
+          pagoPorVal = '50_50';
+          pagoAlleVal = Math.round((base / 2) * 100) / 100;
+          pagoKellyVal = Math.round((base - pagoAlleVal) * 100) / 100;
+        }
+      }
+
       const payload = {
         description: newValues.description,
         amount: base,
@@ -1153,11 +1329,14 @@ export default function Home() {
         subcategoria: newValues.subcategoria || '',
         quem: newValues.quem || 'Comum',
         destino: newValues.destino || '',
-        pago: !!newValues.pago,
+        pago: isPaid,
         fixa: !!newValues.fixa,
         payment_method: newValues.payment_method || 'checking',
         card_name: newValues.card_name || null,
         installment_info: newValues.installment_info || null,
+        pago_por: pagoPorVal,
+        pago_alle: pagoAlleVal,
+        pago_kelly: pagoKellyVal,
       };
 
       const siblingFields = {
@@ -1320,19 +1499,35 @@ export default function Home() {
       if (!isCredit && origTx) {
         const wasPaid = !!origTx.pago;
         const willBePaid = !!payload.pago;
-        const oldAmount = Number(origTx.amount || 0);
-        const newAmount = Number(payload.amount || 0);
-        const who = getPagoPor(origTx.id) || quienDeQuem(payload.quem) || 'alle';
         const sign = payload.type === 'income' ? 1 : -1;
 
+        const oldAlle = Number(origTx.pago_alle || 0);
+        const oldKelly = Number(origTx.pago_kelly || 0);
+        const newAlle = Number(payload.pago_alle || 0);
+        const newKelly = Number(payload.pago_kelly || 0);
+
         if (!wasPaid && willBePaid) {
-          deltaSaldo(who, sign * newAmount);
-          setPagoPor(targetTx.id, who);
+          if (newAlle > 0) deltaSaldo('alle', sign * newAlle);
+          if (newKelly > 0) deltaSaldo('kelly', sign * newKelly);
+          if (newAlle === 0 && newKelly === 0) {
+            const who = payload.pago_por || quienDeQuem(payload.quem) || 'alle';
+            deltaSaldo(who, sign * Number(payload.amount || 0));
+          }
+          setPagoPor(targetTx.id, payload.pago_por || '50_50');
         } else if (wasPaid && !willBePaid) {
-          deltaSaldo(who, -1 * sign * oldAmount);
+          if (oldAlle > 0) deltaSaldo('alle', -sign * oldAlle);
+          if (oldKelly > 0) deltaSaldo('kelly', -sign * oldKelly);
+          if (oldAlle === 0 && oldKelly === 0) {
+            const who = getPagoPor(origTx.id) || quienDeQuem(origTx.quem) || 'alle';
+            deltaSaldo(who, -sign * Number(origTx.amount || 0));
+          }
           setPagoPor(targetTx.id, null);
-        } else if (wasPaid && willBePaid && oldAmount !== newAmount) {
-          deltaSaldo(who, sign * (newAmount - oldAmount));
+        } else if (wasPaid && willBePaid) {
+          const diffAlle = newAlle - oldAlle;
+          const diffKelly = newKelly - oldKelly;
+          if (diffAlle !== 0) deltaSaldo('alle', sign * diffAlle);
+          if (diffKelly !== 0) deltaSaldo('kelly', sign * diffKelly);
+          setPagoPor(targetTx.id, payload.pago_por || '50_50');
         }
       }
 
@@ -2774,6 +2969,57 @@ export default function Home() {
                 </label>
               </div>
 
+              {editingTransaction.pago && (
+                <div className="space-y-2 p-3 rounded-2xl bg-[#0a0e1a] border border-slate-700 animate-fade-in">
+                  <label className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Quem Realizou o Pagamento?</label>
+                  <select
+                    className="w-full bg-[#121827] border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    value={editingTransaction.pago_por || '50_50'}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const tot = Number(editingTransaction.amount || 0);
+                      const h = Math.round((tot / 2) * 100) / 100;
+                      setEditingTransaction({
+                        ...editingTransaction,
+                        pago_por: v,
+                        pago_alle: v === 'alle' ? tot : v === '50_50' ? h : v === 'kelly' ? 0 : editingTransaction.pago_alle,
+                        pago_kelly: v === 'kelly' ? tot : v === '50_50' ? Math.round((tot - h) * 100) / 100 : v === 'alle' ? 0 : editingTransaction.pago_kelly,
+                      });
+                    }}
+                  >
+                    <option value="50_50">⚖️ Dividido 50/50</option>
+                    <option value="alle">💜 100% {partner1}</option>
+                    <option value="kelly">💖 100% {partner2}</option>
+                    <option value="custom">✏️ Rateio Personalizado</option>
+                  </select>
+
+                  {editingTransaction.pago_por === 'custom' && (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[10px] text-purple-300 font-bold uppercase">{partner1} (R$)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editingTransaction.pago_alle ?? ''}
+                          onChange={(e) => setEditingTransaction({ ...editingTransaction, pago_alle: e.target.value })}
+                          className="w-full bg-[#121827] border border-purple-500/40 rounded-xl px-2.5 py-1.5 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-rose-300 font-bold uppercase">{partner2} (R$)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editingTransaction.pago_kelly ?? ''}
+                          onChange={(e) => setEditingTransaction({ ...editingTransaction, pago_kelly: e.target.value })}
+                          className="w-full bg-[#121827] border border-rose-500/40 rounded-xl px-2.5 py-1.5 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button
                 type="submit"
                 className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 cursor-pointer"
@@ -3272,7 +3518,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Modal: Quem pagou/recebeu? (ajuste automático de saldo) */}
+      {/* Modal: Quem pagou/recebeu? (ajuste automático de saldo e rateio 50/50 ou custom) */}
       {pendingPaidTx && (
         (() => {
           const pt = transactions.find(x => x.id === pendingPaidTx);
@@ -3281,17 +3527,29 @@ export default function Home() {
           const saldos = getSaldo();
           const p1Current = saldos.alle;
           const p2Current = saldos.kelly;
-          const p1Next = isReceita ? p1Current + amount : p1Current - amount;
-          const p2Next = isReceita ? p2Current + amount : p2Current - amount;
+          const half = Math.round((amount / 2) * 100) / 100;
+          const rest = Math.round((amount - half) * 100) / 100;
+
+          const p1Next100 = isReceita ? p1Current + amount : p1Current - amount;
+          const p2Next100 = isReceita ? p2Current + amount : p2Current - amount;
+          const p1NextHalf = isReceita ? p1Current + half : p1Current - half;
+          const p2NextHalf = isReceita ? p2Current + rest : p2Current - rest;
+
           const fmt = (val) => Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const isComum = pt && pt.quem && pt.quem.startsWith('Comum');
+
+          const customAlleNum = parseFloat(String(customPayAlle).replace(',', '.')) || 0;
+          const customKellyNum = parseFloat(String(customPayKelly).replace(',', '.')) || 0;
+          const customSum = Math.round((customAlleNum + customKellyNum) * 100) / 100;
+          const isSumExact = Math.abs(customSum - amount) < 0.02;
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label="Quem pagou">
-              <div className="bg-[#121827] border border-white/15 w-full max-w-sm rounded-2xl shadow-2xl p-4 sm:p-5 space-y-3.5 animate-scale-in">
-                <div className="flex justify-between items-center pb-2 border-b border-white/10">
-                  <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <div className="bg-[#121827] border border-white/15 w-full max-w-md rounded-3xl shadow-2xl p-4 sm:p-6 space-y-4 animate-scale-in">
+                <div className="flex justify-between items-center pb-2.5 border-b border-white/10">
+                  <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
                     <span>{isReceita ? '💰' : '💳'}</span>
-                    {isReceita ? 'Quem recebeu?' : 'Quem pagou?'}
+                    {isReceita ? 'Quem recebeu?' : 'Quem realizou o pagamento?'}
                   </h3>
                   <button
                     onClick={cancelPaidWho}
@@ -3302,56 +3560,186 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className="bg-[#0a0e1a] rounded-xl p-3 border border-white/10 space-y-1">
-                  <p className="text-xs font-bold text-white truncate">{pt && pt.description}</p>
-                  <p className="text-sm font-black text-emerald-400">
+                <div className="bg-[#0a0e1a] rounded-2xl p-3.5 border border-white/10 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-white truncate max-w-[220px]">{pt && pt.description}</p>
+                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-lg border bg-white/5 border-white/10 text-slate-300 shrink-0">
+                      {pt?.quem === 'Eu' ? `💜 ${partner1}` : pt?.quem === 'Outro' ? `💖 ${partner2}` : '🏡 Comum (50/50)'}
+                    </span>
+                  </div>
+                  <p className="text-xl font-black text-emerald-400">
                     R$ {fmt(amount)}
                   </p>
                   <p className="text-[11px] text-slate-400 leading-snug">
-                    {isReceita ? 'O valor será somado ao saldo de quem recebeu.' : 'O valor será debitado do saldo de quem pagou.'}
+                    {isReceita
+                      ? 'Selecione quem recebeu ou divida a entrada entre ambos.'
+                      : isComum
+                        ? 'Esta conta é compartilhada. Escolha se foi dividida 50/50, paga inteira por um ou rateada.'
+                        : 'Escolha quem pagou para debitar do saldo e atualizar o acerto de contas.'}
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => confirmPaidWho('alle')}
-                    className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
-                  >
-                    <span className="text-xs font-black text-purple-300 flex items-center gap-1 mb-0.5">
-                      💜 {partner1}
-                    </span>
-                    <span className="text-[10px] text-slate-400">
-                      Saldo: R$ {fmt(p1Current)}
-                    </span>
-                    <span className={`text-[10px] font-bold ${isReceita ? 'text-emerald-400' : 'text-purple-300'}`}>
-                      ➔ R$ {fmt(p1Next)}
-                    </span>
-                  </button>
+                {!customPayMode ? (
+                  <div className="space-y-2">
+                    {/* Opção 1: 50/50 Meio a meio */}
+                    <button
+                      type="button"
+                      onClick={() => confirmPaidWho({ whoPaid: '50_50', alleAmount: half, kellyAmount: rest })}
+                      className="w-full flex items-center justify-between p-3 rounded-2xl bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/30 text-white cursor-pointer transition-all active:scale-[0.99] group text-left"
+                    >
+                      <div>
+                        <span className="text-xs font-black text-emerald-300 flex items-center gap-1.5">
+                          <span>⚖️</span> Dividido 50/50 (Meio a meio)
+                        </span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          R$ {fmt(half)} do saldo de cada um • Sem acerto pendente
+                        </span>
+                      </div>
+                      <span className="text-xs font-black text-emerald-400 bg-emerald-500/20 px-2 py-1 rounded-xl">
+                        R$ {fmt(half)} cada
+                      </span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => confirmPaidWho('kelly')}
-                    className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
-                  >
-                    <span className="text-xs font-black text-rose-300 flex items-center gap-1 mb-0.5">
-                      💖 {partner2}
-                    </span>
-                    <span className="text-[10px] text-slate-400">
-                      Saldo: R$ {fmt(p2Current)}
-                    </span>
-                    <span className={`text-[10px] font-bold ${isReceita ? 'text-emerald-400' : 'text-rose-300'}`}>
-                      ➔ R$ {fmt(p2Next)}
-                    </span>
-                  </button>
-                </div>
+                    {/* Opção 2 e 3: Alle 100% ou Kelly 100% */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => confirmPaidWho({ whoPaid: 'alle', alleAmount: amount, kellyAmount: 0 })}
+                        className="flex flex-col p-3 rounded-2xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-white cursor-pointer shadow-md transition-all active:scale-[0.98] group text-left"
+                      >
+                        <span className="text-xs font-black text-purple-300 flex items-center gap-1 mb-0.5">
+                          💜 100% {partner1}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {isReceita ? 'Recebe tudo' : 'Paga tudo'}
+                        </span>
+                        <span className={`text-[10px] font-bold mt-1.5 ${isReceita ? 'text-emerald-400' : 'text-purple-300'}`}>
+                          Saldo: R$ {fmt(p1Next100)}
+                        </span>
+                        {isComum && !isReceita && (
+                          <span className="text-[9px] text-purple-300/80 mt-1 font-medium leading-tight">
+                            {partner2} fica devendo R$ {fmt(half)}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => confirmPaidWho({ whoPaid: 'kelly', alleAmount: 0, kellyAmount: amount })}
+                        className="flex flex-col p-3 rounded-2xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-white cursor-pointer shadow-md transition-all active:scale-[0.98] group text-left"
+                      >
+                        <span className="text-xs font-black text-rose-300 flex items-center gap-1 mb-0.5">
+                          💖 100% {partner2}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {isReceita ? 'Recebe tudo' : 'Paga tudo'}
+                        </span>
+                        <span className={`text-[10px] font-bold mt-1.5 ${isReceita ? 'text-emerald-400' : 'text-rose-300'}`}>
+                          Saldo: R$ {fmt(p2Next100)}
+                        </span>
+                        {isComum && !isReceita && (
+                          <span className="text-[9px] text-rose-300/80 mt-1 font-medium leading-tight">
+                            {partner1} fica devendo R$ {fmt(half)}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Opção 4: Personalizado / Editável */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomPayMode(true);
+                        setCustomPayAlle(half.toFixed(2));
+                        setCustomPayKelly(rest.toFixed(2));
+                      }}
+                      className="w-full py-2.5 px-3 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-indigo-300 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>✏️</span> Divisão Personalizada (Digitar valores exatos)
+                    </button>
+                  </div>
+                ) : (
+                  /* MODO PERSONALIZADO */
+                  <div className="space-y-3 p-3.5 rounded-2xl bg-[#0a0e1a] border border-indigo-500/30 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-indigo-300 uppercase tracking-wider">
+                        Digitar Rateio Exato
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCustomPayMode(false)}
+                        className="text-[10px] font-bold text-slate-400 hover:text-white underline cursor-pointer"
+                      >
+                        Voltar às opções
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-purple-300 uppercase">
+                          Pago por {partner1} (R$)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={customPayAlle}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setCustomPayAlle(val);
+                            const n = parseFloat(val) || 0;
+                            if (amount > 0 && n <= amount) {
+                              setCustomPayKelly((amount - n).toFixed(2));
+                            }
+                          }}
+                          className="w-full bg-[#121827] border border-purple-500/40 rounded-xl px-3 py-2 text-sm font-black text-white focus:outline-none focus:border-purple-400"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-rose-300 uppercase">
+                          Pago por {partner2} (R$)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={customPayKelly}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setCustomPayKelly(val);
+                            const n = parseFloat(val) || 0;
+                            if (amount > 0 && n <= amount) {
+                              setCustomPayAlle((amount - n).toFixed(2));
+                            }
+                          }}
+                          className="w-full bg-[#121827] border border-rose-500/40 rounded-xl px-3 py-2 text-sm font-black text-white focus:outline-none focus:border-rose-400"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] pt-1">
+                      <span className="text-slate-400">Total da conta: R$ {fmt(amount)}</span>
+                      <span className={`font-black ${isSumExact ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        Soma: R$ {fmt(customSum)} {isSumExact ? '✅' : '⚠️'}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={customSum <= 0}
+                      onClick={() => confirmPaidWho({ whoPaid: 'custom', alleAmount: customAlleNum, kellyAmount: customKellyNum })}
+                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-black text-xs shadow-md transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      Confirmar Pagamento Personalizado
+                    </button>
+                  </div>
+                )}
 
                 <button
                   type="button"
                   onClick={cancelPaidWho}
-                  className="w-full py-2 rounded-xl border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/5 cursor-pointer transition-colors"
+                  className="w-full py-2 rounded-xl border border-white/10 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
                 >
-                  Cancelar (não alterar status)
+                  Cancelar (manter pendente)
                 </button>
               </div>
             </div>
@@ -3366,6 +3754,7 @@ export default function Home() {
           const saldos = getSaldo();
           const p1Current = saldos.alle;
           const p2Current = saldos.kelly;
+          const half = Math.round((faturaTotal / 2) * 100) / 100;
           const p1Next = p1Current - faturaTotal;
           const p2Next = p2Current - faturaTotal;
           const fmt = (val) => Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -3397,38 +3786,59 @@ export default function Home() {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="space-y-2 pt-1">
+                  {/* Opção 50/50 na fatura */}
                   <button
                     type="button"
-                    onClick={() => confirmPayInvoice('alle')}
-                    className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
+                    onClick={() => confirmPayInvoice('50_50')}
+                    className="w-full p-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 flex items-center justify-between"
                   >
-                    <span className="text-xs font-black text-purple-300 flex items-center gap-1 mb-0.5">
-                      💜 {partner1}
-                    </span>
-                    <span className="text-[10px] text-slate-400">
-                      Saldo: R$ {fmt(p1Current)}
-                    </span>
-                    <span className="text-[10px] font-bold text-rose-300">
-                      ➔ R$ {fmt(p1Next)}
+                    <div>
+                      <span className="text-xs font-black text-emerald-300 flex items-center gap-1">
+                        ⚖️ Pagar 50/50 (Metade de cada saldo)
+                      </span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        R$ {fmt(half)} do saldo de {partner1} e de {partner2}
+                      </span>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-400 bg-emerald-500/20 px-2 py-1 rounded-lg">
+                      50% cada
                     </span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => confirmPayInvoice('kelly')}
-                    className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
-                  >
-                    <span className="text-xs font-black text-rose-300 flex items-center gap-1 mb-0.5">
-                      💖 {partner2}
-                    </span>
-                    <span className="text-[10px] text-slate-400">
-                      Saldo: R$ {fmt(p2Current)}
-                    </span>
-                    <span className="text-[10px] font-bold text-rose-300">
-                      ➔ R$ {fmt(p2Next)}
-                    </span>
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => confirmPayInvoice('alle')}
+                      className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
+                    >
+                      <span className="text-xs font-black text-purple-300 flex items-center gap-1 mb-0.5">
+                        💜 {partner1}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Saldo: R$ {fmt(p1Current)}
+                      </span>
+                      <span className="text-[10px] font-bold text-rose-300">
+                        ➔ R$ {fmt(p1Next)}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => confirmPayInvoice('kelly')}
+                      className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-white cursor-pointer shadow-md transition-all active:scale-95 group text-left"
+                    >
+                      <span className="text-xs font-black text-rose-300 flex items-center gap-1 mb-0.5">
+                        💖 {partner2}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Saldo: R$ {fmt(p2Current)}
+                      </span>
+                      <span className="text-[10px] font-bold text-rose-300">
+                        ➔ R$ {fmt(p2Next)}
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
                 <button
