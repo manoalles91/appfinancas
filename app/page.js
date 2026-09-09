@@ -13,6 +13,7 @@ import Wishlist from '@/components/Wishlist';
 import HouseTasks from '@/components/HouseTasks';
 import AppLock from '@/components/AppLock';
 import AuditLogViewer from '@/components/AuditLogViewer';
+import Financiamentos from '@/components/Financiamentos';
 import { useToast } from '@/components/ui/toast';
 import { Sparkles, CreditCard, Trash2, Edit3, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, AlertTriangle, Settings, Home as HomeIcon, ArrowLeftRight, PieChart, X, SlidersHorizontal, ShoppingBag, CheckSquare, Calendar, FastForward, Lock, Unlock, KeyRound, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -128,6 +129,52 @@ export default function Home() {
   const [customPayKelly, setCustomPayKelly] = useState('');
   const [pendingPayInvoice, setPendingPayInvoice] = useState(null);
 
+  // Modal de Liquidação do Acerto do Casal (Pix)
+  const [pendingSettleDebt, setPendingSettleDebt] = useState(null);
+
+  const handleOpenSettleDebt = useCallback((data) => {
+    setPendingSettleDebt(data);
+  }, []);
+
+  const handleConfirmSettleDebt = async () => {
+    if (!pendingSettleDebt) return;
+    const { debtor, creditor, amount } = pendingSettleDebt;
+    const isP1Debtor = debtor === partner1;
+    const cleanAmount = Math.round(Number(amount || 0) * 100) / 100;
+
+    try {
+      // 1. Debita de quem deve e credita para quem recebe no saldo bancário
+      deltaSaldo(isP1Debtor ? 'alle' : 'kelly', -cleanAmount);
+      deltaSaldo(isP1Debtor ? 'kelly' : 'alle', cleanAmount);
+
+      // 2. Grava a transação para comprovação e equilíbrio contábil
+      const payload = {
+        description: `Acerto Casal: Pix de ${debtor} para ${creditor}`,
+        amount: cleanAmount,
+        type: 'expense',
+        category: 'Outros',
+        subcategoria: 'Acerto Casal',
+        date: new Date().toISOString().slice(0, 10),
+        pago: true,
+        payment_method: 'checking',
+        quem: isP1Debtor ? 'Outro' : 'Eu',
+        pago_por: isP1Debtor ? 'alle' : 'kelly',
+        pago_alle: isP1Debtor ? cleanAmount : 0,
+        pago_kelly: isP1Debtor ? 0 : cleanAmount,
+      };
+
+      const { data, error } = await supabase.from('transactions').insert([payload]).select();
+      if (error) throw error;
+      if (data && data[0]) {
+        setTransactions(prev => [data[0], ...prev]);
+      }
+      setPendingSettleDebt(null);
+      toast(`Acerto de R$ ${cleanAmount.toFixed(2)} liquidado com sucesso!`);
+    } catch (err) {
+      toast('Erro ao liquidar acerto: ' + (err?.message || err), 'error');
+    }
+  };
+
   const getAjustesFaturas = () => {
     try {
       if (typeof window === 'undefined') return {};
@@ -145,6 +192,56 @@ export default function Home() {
       return {};
     }
   };
+
+  // Sincronização centralizada de configurações na nuvem
+  const syncFromCloud = useCallback(async () => {
+    try {
+      const s = await loadCloudSettings();
+      if (typeof s.partner1 === 'string' && s.partner1) setPartner1(s.partner1);
+      if (typeof s.partner2 === 'string' && s.partner2) setPartner2(s.partner2);
+      if (s.ajustes_faturas && typeof s.ajustes_faturas === 'object') {
+        try { localStorage.setItem('fincasal_ajustes_faturas', JSON.stringify(s.ajustes_faturas)); } catch {}
+        setAjusteVersion(v => v + 1);
+      }
+      if (s.faturas_pagas && typeof s.faturas_pagas === 'object') {
+        try { localStorage.setItem('fincasal_faturas_pagas', JSON.stringify(s.faturas_pagas)); } catch {}
+        setAjusteVersion(v => v + 1);
+      }
+      if (s.wishlist && Array.isArray(s.wishlist)) {
+        setWishlist(s.wishlist);
+        try { localStorage.setItem('fincasal_wishlist', JSON.stringify(s.wishlist)); } catch {}
+      }
+      if (s.tasks && Array.isArray(s.tasks)) {
+        setTasks(s.tasks);
+        try { localStorage.setItem('fincasal_tasks', JSON.stringify(s.tasks)); } catch {}
+      }
+      if (s.financiamentos && Array.isArray(s.financiamentos)) {
+        try { localStorage.setItem('fincasal_financiamentos', JSON.stringify(s.financiamentos)); } catch {}
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('fincasal:financiamentos-changed'));
+      }
+      if (s.fixas_variaveis && Array.isArray(s.fixas_variaveis)) {
+        try { localStorage.setItem('fincasal_fixas_variaveis', JSON.stringify(s.fixas_variaveis)); } catch {}
+      }
+      if (s.saldo_alle !== undefined && s.saldo_alle !== null) {
+        try { localStorage.setItem('fincasal_saldo_alle', String(s.saldo_alle)); } catch {}
+      }
+      if (s.saldo_kelly !== undefined && s.saldo_kelly !== null) {
+        try { localStorage.setItem('fincasal_saldo_kelly', String(s.saldo_kelly)); } catch {}
+      }
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('fincasal:saldo-changed'));
+      if (typeof s.app_pin_hash === 'string') {
+        setPinHash(s.app_pin_hash);
+        try { localStorage.setItem('fincasal_pin_hash', s.app_pin_hash); } catch {}
+        if (s.app_pin_hash && sessionStorage.getItem('fincasal_unlocked') !== 'true') {
+          setIsLocked(true);
+        } else if (!s.app_pin_hash) {
+          setIsLocked(false);
+        }
+      }
+    } catch (err) {
+      console.error('Error in syncFromCloud:', err);
+    }
+  }, []);
 
   // States para edição de transação
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -200,36 +297,8 @@ export default function Home() {
       if (localTasks) setTasks(JSON.parse(localTasks));
     } catch {}
 
-    let active = true;
-    (async () => {
-      const s = await loadCloudSettings();
-      if (!active) return;
-      if (typeof s.partner1 === 'string' && s.partner1) setPartner1(s.partner1);
-      if (typeof s.partner2 === 'string' && s.partner2) setPartner2(s.partner2);
-      if (s.ajustes_faturas && typeof s.ajustes_faturas === 'object') {
-        try { localStorage.setItem('fincasal_ajustes_faturas', JSON.stringify(s.ajustes_faturas)); } catch {}
-        setAjusteVersion(v => v + 1);
-      }
-      if (s.wishlist && Array.isArray(s.wishlist)) {
-        setWishlist(s.wishlist);
-        try { localStorage.setItem('fincasal_wishlist', JSON.stringify(s.wishlist)); } catch {}
-      }
-      if (s.tasks && Array.isArray(s.tasks)) {
-        setTasks(s.tasks);
-        try { localStorage.setItem('fincasal_tasks', JSON.stringify(s.tasks)); } catch {}
-      }
-      if (typeof s.app_pin_hash === 'string') {
-        setPinHash(s.app_pin_hash);
-        try { localStorage.setItem('fincasal_pin_hash', s.app_pin_hash); } catch {}
-        if (s.app_pin_hash && sessionStorage.getItem('fincasal_unlocked') !== 'true') {
-          setIsLocked(true);
-        } else if (!s.app_pin_hash) {
-          setIsLocked(false);
-        }
-      }
-    })();
-    return () => { active = false; };
-  }, []);
+    syncFromCloud();
+  }, [syncFromCloud]);
 
   // Handlers para Segurança / PIN Lock
   const handleUnlock = useCallback(() => {
@@ -453,9 +522,13 @@ export default function Home() {
       .channel('fincasal-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cartoes' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
+        fetchData();
+        syncFromCloud();
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [fetchData]);
+  }, [fetchData, syncFromCloud]);
 
   const monthTransactions = useMemo(() => {
     const viewMonth = viewDate.getMonth();
@@ -475,6 +548,7 @@ export default function Home() {
     const ajustes = getAjustesFaturas();
     const faturasPagas = getFaturasPagas();
     const monthKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
+    const todayDay = new Date().getDate();
 
     return cartoes.map(card => {
       const matches = transactions.filter(t => {
@@ -497,6 +571,11 @@ export default function Home() {
         ? manualPaidStatus
         : (matches.length > 0 && matches.every(t => t.pago));
       const limite = Number(card.limite || 0);
+
+      // Indicador de Melhor Dia de Compra (dia do fechamento até +3 dias)
+      const fechamento = Number(card.fechamento || 3);
+      const isMelhorDia = (todayDay >= fechamento && todayDay <= fechamento + 3) ||
+                          (fechamento > 27 && (todayDay >= fechamento || todayDay <= (fechamento + 3) % 30));
 
       // Total de limite comprometido/utilizado no cartão (todas as faturas e parcelas em aberto)
       const cardTxs = transactions.filter(t => t && t.card_name === card.nome && t.type === 'credit');
@@ -533,6 +612,7 @@ export default function Home() {
         totalUtilizado,
         isAjustada,
         isPaga,
+        isMelhorDia,
         totalItems: matches.length,
         purchases: matches,
         disponivel,
@@ -1849,26 +1929,28 @@ export default function Home() {
 
           {/* Controls Cluster: Seletor de Mês & Ações */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Seletor de Mês Compacto */}
-            <div className="flex items-center gap-1 bg-[#121827] px-1.5 py-1 rounded-xl border border-white/10">
-              <button
-                onClick={() => changeMonth(-1)}
-                className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white cursor-pointer active:scale-90"
-                title="Mês anterior"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-              <span className="text-[11px] sm:text-xs font-black w-18 sm:w-28 text-center text-white uppercase tracking-wider truncate">
-                {monthLabel}
-              </span>
-              <button
-                onClick={() => changeMonth(1)}
-                className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white cursor-pointer active:scale-90"
-                title="Próximo mês"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            {/* Seletor de Mês Compacto - visível apenas nas abas mensais (Início e Finanças) */}
+            {(activeTab === 'inicio' || activeTab === 'financas') && (
+              <div className="flex items-center gap-1 bg-[#121827] px-1.5 py-1 rounded-xl border border-white/10">
+                <button
+                  onClick={() => changeMonth(-1)}
+                  className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white cursor-pointer active:scale-90"
+                  title="Mês anterior"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="text-[11px] sm:text-xs font-black w-18 sm:w-28 text-center text-white uppercase tracking-wider truncate">
+                  {monthLabel}
+                </span>
+                <button
+                  onClick={() => changeMonth(1)}
+                  className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white cursor-pointer active:scale-90"
+                  title="Próximo mês"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Privacy Eye */}
             <button
@@ -1960,26 +2042,28 @@ export default function Home() {
               wishlist={wishlist}
               isPrivate={isPrivate}
               onOpenAddTransaction={handleOpenQuickAdd}
-              onNavigateTab={(tab) => {
+              onNavigateTab={(tab, subTab) => {
                 if (tab === 'financas') {
                   setActiveTab('financas');
-                  setFinanceSubTab('transacoes');
+                  setFinanceSubTab(subTab || 'transacoes');
                 } else {
                   setActiveTab(tab);
                 }
               }}
+              onSettleDebt={handleOpenSettleDebt}
             />
           </div>
         )}
 
-        {/* Aba: Finanças (Centraliza Transações, Cartões e Relatórios) */}
+        {/* Aba: Finanças (Centraliza Transações, Cartões, Financiamento e Relatórios) */}
         {activeTab === 'financas' && (
           <div className="space-y-6">
             {/* Sub-navegação discreta de Finanças */}
             <div className="flex gap-2 p-1.5 rounded-2xl bg-[#121827] border border-white/10 w-full sm:w-auto self-start overflow-x-auto no-scrollbar">
               {[
-                { id: 'transacoes', label: '📄 Transações & Extrato' },
+                { id: 'transacoes', label: '📄 Extrato & Lançamentos' },
                 { id: 'cartoes', label: '💳 Faturas & Cartões' },
+                { id: 'financiamentos', label: '🏠 Financiamento da Casa' },
                 { id: 'relatorios', label: '📊 Relatórios' }
               ].map((sub) => (
                 <button
@@ -1996,9 +2080,9 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Sub-Aba: Transações */}
+            {/* Sub-Aba: Transações (Extrato em Largura Total e Ação Rápida) */}
             {financeSubTab === 'transacoes' && (
-              <div className="space-y-6 animate-fade-in">
+              <div className="space-y-4 animate-fade-in">
                 {selectedCardFilter && (
                   <div className="flex items-center justify-between p-3 bg-purple-500/10 border border-purple-500/30 rounded-2xl animate-fade-in">
                     <span className="text-xs font-bold text-purple-300">
@@ -2013,19 +2097,22 @@ export default function Home() {
                   </div>
                 )}
 
-                <CSVManager
-                  transactions={transactions}
-                  onImport={handleImportTransactions}
-                />
-
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <AddTransactionForm
-                    onAdd={handleAddTransaction}
-                    onAddMany={handleBulkAdd}
-                    cartoes={cartoes}
-                    partner1={partner1}
-                    partner2={partner2}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                  <CSVManager
+                    transactions={transactions}
+                    onImport={handleImportTransactions}
                   />
+                  <button
+                    type="button"
+                    onClick={() => handleOpenQuickAdd('expense')}
+                    className="px-4 py-2.5 bg-gradient-to-tr from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white rounded-2xl text-xs font-black transition-all cursor-pointer shadow-lg shadow-indigo-500/25 border border-indigo-400/30 flex items-center justify-center gap-1.5 active:scale-95 shrink-0"
+                  >
+                    <Plus className="h-4 w-4 stroke-[2.5]" />
+                    <span>Novo Lançamento</span>
+                  </button>
+                </div>
+
+                <div className="w-full">
                   <TransactionList
                     transactions={monthTransactions}
                     cardsSummary={cardsSummary}
@@ -2045,6 +2132,17 @@ export default function Home() {
                     isPrivate={isPrivate}
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Sub-Aba: Financiamento da Casa */}
+            {financeSubTab === 'financiamentos' && (
+              <div className="space-y-6 animate-fade-in">
+                <Financiamentos
+                  transactions={transactions}
+                  onAddMany={handleBulkAdd}
+                  onDeleteByIds={handleDeleteByIds}
+                />
               </div>
             )}
 
@@ -2082,33 +2180,40 @@ export default function Home() {
                     {cardsSummary.map((card) => (
                       <Card key={card.id} className="bg-[#1e293b] border-slate-800 shadow-xl overflow-hidden group hover:border-slate-700 transition-all">
                         <CardContent className="p-6 space-y-6">
-                          <div className="flex justify-between items-start">
-                            <div className="flex items-center gap-3">
-                              <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-xl ${
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-xl shrink-0 ${
                                 card.nome === 'Nubank' ? 'bg-[#8a05be]' :
                                 card.nome === 'Inter' ? 'bg-[#ff7a00]' :
                                 card.nome === 'Sicoob' ? 'bg-[#003641]' : 'bg-[#17469e]'
                               }`}>
                                 {card.nome.charAt(0)}
                               </div>
-                              <div>
-                                <h3 className="font-bold text-lg text-white">{card.nome}</h3>
+                              <div className="min-w-0">
+                                <h3 className="font-bold text-lg text-white truncate">{card.nome}</h3>
                                 <p className="text-xs text-slate-400 uppercase tracking-wider">{card.bandeira || 'MasterCard'}</p>
                               </div>
                             </div>
 
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
-                              card.isPaga
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                              : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                            }`}>
-                              {card.isPaga ? 'Paga' : 'Aberta'}
-                            </span>
-                            {card.isAjustada && (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
-                                AJUSTADA
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+                              {card.isMelhorDia && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse shadow-sm">
+                                  ⭐ Melhor dia!
+                                </span>
+                              )}
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
+                                card.isPaga
+                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                              }`}>
+                                {card.isPaga ? 'Paga' : 'Aberta'}
                               </span>
-                            )}
+                              {card.isAjustada && (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+                                  AJUSTADA
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-3 gap-2 text-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
@@ -3852,6 +3957,61 @@ export default function Home() {
             </div>
           );
         })()
+      )}
+
+      {/* Modal de Confirmação: Liquidar Acerto do Casal (Pix) */}
+      {pendingSettleDebt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label="Liquidar Acerto">
+          <div className="bg-[#121827] border border-emerald-500/30 w-full max-w-md rounded-3xl shadow-2xl p-4 sm:p-6 space-y-4 animate-scale-in">
+            <div className="flex justify-between items-center pb-2.5 border-b border-white/10">
+              <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+                <span>💸</span>
+                Liquidar Acerto do Casal (Pix)
+              </h3>
+              <button
+                onClick={() => setPendingSettleDebt(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 cursor-pointer text-xs"
+                aria-label="Fechar"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-[#0a0e1a] rounded-2xl p-4 border border-emerald-500/20 space-y-2 text-center">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                Transferência de Equilíbrio
+              </p>
+              <div className="flex items-center justify-center gap-2 text-sm font-black text-white">
+                <span className="text-rose-400">{pendingSettleDebt.debtor}</span>
+                <span className="text-slate-500">➔</span>
+                <span className="text-purple-400">{pendingSettleDebt.creditor}</span>
+              </div>
+              <p className="text-2xl sm:text-3xl font-black text-emerald-400">
+                R$ {Number(pendingSettleDebt.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-[11px] text-slate-400 leading-relaxed text-left pt-1">
+                Ao confirmar que o Pix foi realizado, este valor será debitado do saldo bancário de <strong>{pendingSettleDebt.debtor}</strong> e creditado em <strong>{pendingSettleDebt.creditor}</strong>. Uma transação de acerto será gravada no extrato e as contas do mês ficarão equilibradas!
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingSettleDebt(null)}
+                className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSettleDebt}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg shadow-emerald-500/25 cursor-pointer transition-all active:scale-95"
+              >
+                Confirmar Pix Feito
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Tela de Bloqueio por Senha (AppLock) */}

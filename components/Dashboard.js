@@ -1,8 +1,9 @@
 'use client';
 
 import { Card, CardContent } from '@/components/ui/card';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { 
+    Home,
     CalendarClock, 
     AlertCircle, 
     CalendarDays, 
@@ -17,7 +18,6 @@ import {
     Clock
 } from 'lucide-react';
 import Balances from '@/components/Balances';
-import Financiamentos from '@/components/Financiamentos';
 import { formatCurrency, formatDate, parseLocalDate } from '@/lib/format';
 
 export default function Dashboard({ 
@@ -34,10 +34,51 @@ export default function Dashboard({
     wishlist = [],
     onNavigateTab,
     onOpenAddTransaction,
-    isPrivate = false
+    isPrivate = false,
+    onSettleDebt
 }) {
     const txs = useMemo(() => (Array.isArray(transactions) ? transactions : []), [transactions]);
     const allTxs = useMemo(() => (Array.isArray(allTransactions) ? allTransactions : []), [allTransactions]);
+
+    const [financiamentos, setFinanciamentos] = useState(() => {
+        if (typeof window === 'undefined') return [];
+        try {
+            return JSON.parse(localStorage.getItem('fincasal_financiamentos')) || [];
+        } catch {
+            return [];
+        }
+    });
+
+    useEffect(() => {
+        const updateFin = () => {
+            try {
+                setFinanciamentos(JSON.parse(localStorage.getItem('fincasal_financiamentos')) || []);
+            } catch {}
+        };
+        window.addEventListener('fincasal:financiamentos-changed', updateFin);
+        return () => window.removeEventListener('fincasal:financiamentos-changed', updateFin);
+    }, []);
+
+    const primaryFinanciamento = useMemo(() => {
+        if (!financiamentos || financiamentos.length === 0) return null;
+        const f = financiamentos[0];
+        const rows = allTxs.filter(
+            (t) => t && t.description && (t.description === f.nome || t.description.startsWith(f.nome + ' ('))
+        );
+        const paid = rows.filter((t) => t.pago).length;
+        const lastPaid = paid > 0 ? f.parcelaAtual + paid - 1 : f.parcelaAtual - 1;
+        const next = Math.min(lastPaid + 1, f.total);
+        const nextValor = Math.max(0, f.valorAtual - (next - f.parcelaAtual) * f.desconto);
+        const progress = f.total > 0 ? Math.min(100, (Math.max(0, lastPaid) / f.total) * 100) : 0;
+        return {
+            ...f,
+            paid,
+            lastPaid,
+            next,
+            nextValor,
+            progress: Math.round(progress),
+        };
+    }, [financiamentos, allTxs]);
 
     const [manualSaldo, setManualSaldo] = useState(() => {
         if (typeof window === 'undefined') return 0;
@@ -437,41 +478,23 @@ export default function Dashboard({
                 </div>
             </div>
 
-            {/* QUICK ACTIONS ROW (Scrollable Pills) */}
+            {/* QUICK ACTIONS ROW (Navegação Rápida) */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-                {onOpenAddTransaction && (
-                    <>
-                        <button
-                            onClick={() => onOpenAddTransaction('expense')}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
-                        >
-                            <ArrowDownLeft className="h-3.5 w-3.5 text-rose-400" />
-                            <span>+ Despesa</span>
-                        </button>
-                        <button
-                            onClick={() => onOpenAddTransaction('income')}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
-                        >
-                            <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400" />
-                            <span>+ Receita</span>
-                        </button>
-                        <button
-                            onClick={() => onOpenAddTransaction('credit')}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
-                        >
-                            <CreditCard className="h-3.5 w-3.5 text-purple-400" />
-                            <span>+ Cartão</span>
-                        </button>
-                    </>
-                )}
                 {onNavigateTab && (
                     <>
                         <button
-                            onClick={() => onNavigateTab('financas')}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
+                            onClick={() => onNavigateTab('financas', 'transacoes')}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
                         >
                             <Layers className="h-3.5 w-3.5 text-indigo-400" />
-                            <span>Extrato</span>
+                            <span>Extrato Completo</span>
+                        </button>
+                        <button
+                            onClick={() => onNavigateTab('financas', 'cartoes')}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
+                        >
+                            <CreditCard className="h-3.5 w-3.5 text-purple-400" />
+                            <span>Cartões ({cartoes.length})</span>
                         </button>
                         <button
                             onClick={() => onNavigateTab('tarefas')}
@@ -479,6 +502,13 @@ export default function Dashboard({
                         >
                             <CheckSquare className="h-3.5 w-3.5 text-cyan-400" />
                             <span>Tarefas ({tasks.filter(t => !t.completed).length})</span>
+                        </button>
+                        <button
+                            onClick={() => onNavigateTab('desejos')}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
+                        >
+                            <ShoppingBag className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>Desejos ({wishlist.filter(w => (w.status || 'planned') === 'planned').length})</span>
                         </button>
                     </>
                 )}
@@ -506,7 +536,7 @@ export default function Dashboard({
                                     </p>
                                     <div className="space-y-1">
                                         {dueExpenses.vencidas.slice(0, 3).map((t) => (
-                                            <div key={t.id} className="flex items-center justify-between gap-2 bg-[#0a0e1a]/80 rounded-lg px-2.5 py-1.5 border border-white/5 text-xs">
+                                             <div key={t.id} className="flex items-center justify-between gap-2 bg-[#0a0e1a]/80 rounded-lg px-2.5 py-1.5 border border-white/5 text-xs">
                                                 <div className="min-w-0">
                                                     <p className="font-medium text-slate-200 truncate text-[11px]">{t.description}</p>
                                                     <p className="text-[9px] text-rose-400/80">{formatDate(t.date)} • {t._days}d atrás</p>
@@ -542,12 +572,50 @@ export default function Dashboard({
                 </Card>
             )}
 
-            {/* FINANCIAMENTOS (CASA / VEÍCULOS) */}
-            <Financiamentos
-                transactions={allTxs}
-                onAddMany={onAddMany}
-                onDeleteByIds={onDeleteByIds}
-            />
+            {/* FINANCIAMENTOS (CARD COMPACTO E ELEGANTE) */}
+            {primaryFinanciamento && (
+                <Card className="border-indigo-500/25 bg-gradient-to-r from-indigo-950/20 via-[#121827] to-[#0a0e1a] backdrop-blur-md rounded-2xl overflow-hidden hover:border-indigo-500/40 transition-all shadow-lg">
+                    <CardContent className="p-3.5 sm:p-4 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="p-2 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 shrink-0">
+                                    <Home className="h-4 w-4" />
+                                </div>
+                                <div className="min-w-0">
+                                    <h4 className="text-xs sm:text-sm font-bold text-white truncate">{primaryFinanciamento.nome}</h4>
+                                    <p className="text-[10px] text-slate-400">
+                                        Parcela <strong className="text-slate-200">{primaryFinanciamento.next}</strong> de {primaryFinanciamento.total} • Vence dia {primaryFinanciamento.dia}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <span className="text-xs sm:text-sm font-black text-indigo-300 block">
+                                    {displayAmount(primaryFinanciamento.nextValor || primaryFinanciamento.valorAtual)}
+                                </span>
+                                <span className="text-[9px] text-emerald-400 font-black block">{primaryFinanciamento.progress}% pago</span>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+                                <div
+                                    className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-700"
+                                    style={{ width: `${primaryFinanciamento.progress}%` }}
+                                />
+                            </div>
+                        </div>
+                        {onNavigateTab && (
+                            <button
+                                type="button"
+                                onClick={() => onNavigateTab('financas', 'financiamentos')}
+                                className="w-full py-1.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-indigo-300 hover:text-white text-[11px] font-bold border border-white/10 flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-98"
+                            >
+                                <span>Ver Amortizações, Parcelas & Simulações</span>
+                                <ArrowRight className="h-3 w-3" />
+                            </button>
+                        )}
+                    </CardContent>
+                </Card>
+            )}
 
             {/* COMPROMISSOS FIXOS DO MÊS */}
             {summary.fixedTotal > 0 && (
@@ -609,6 +677,27 @@ export default function Dashboard({
                             {partner1}: <span className="text-purple-300">{displayAmount(coupleSummary.p1TotalDisbursed)}</span> • {partner2}: <span className="text-rose-300">{displayAmount(coupleSummary.p2TotalDisbursed)}</span>
                         </span>
                     </div>
+
+                    {/* Botão de 1 clique para liquidar o acerto */}
+                    {coupleSummary.debtAmount > 0.05 && onSettleDebt && (
+                        <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <span className="text-[11px] text-slate-400">
+                                Pix de acerto de contas pendente:
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => onSettleDebt({
+                                    debtor: coupleSummary.debtor,
+                                    creditor: coupleSummary.creditor,
+                                    amount: coupleSummary.debtAmount
+                                })}
+                                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-black text-xs transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 self-stretch sm:self-auto"
+                            >
+                                <span>💸</span>
+                                <span>Liquidar Acerto (Pix)</span>
+                            </button>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 

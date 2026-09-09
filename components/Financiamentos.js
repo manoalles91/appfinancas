@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Home, Plus, Edit3, Trash2, RefreshCw, Check, X, TrendingDown, CalendarDays, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/toast';
 import { formatCurrency } from '@/lib/format';
+import { loadCloudSettings, saveCloudSetting } from '@/lib/cloudSettings';
 
 const STORAGE_KEY = 'fincasal_financiamentos';
 
@@ -19,7 +20,13 @@ const loadAll = () => {
 };
 
 const saveAll = (list) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch {}
+    saveCloudSetting('financiamentos', list);
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('fincasal:financiamentos-changed'));
+    }
 };
 
 const currentMonth = () => {
@@ -52,6 +59,25 @@ export default function Financiamentos({ transactions = [], onAddMany, onDeleteB
 
     useEffect(() => {
         setFinanciamentos(loadAll());
+        let active = true;
+
+        const handleSync = () => {
+            if (active) setFinanciamentos(loadAll());
+        };
+        window.addEventListener('fincasal:financiamentos-changed', handleSync);
+
+        (async () => {
+            const s = await loadCloudSettings();
+            if (active && Array.isArray(s.financiamentos)) {
+                setFinanciamentos(s.financiamentos);
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s.financiamentos)); } catch {}
+            }
+        })();
+
+        return () => {
+            active = false;
+            window.removeEventListener('fincasal:financiamentos-changed', handleSync);
+        };
     }, []);
 
     const updateForm = (patch) => setForm((prev) => ({ ...prev, ...patch }));
