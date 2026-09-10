@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Pencil, Wallet, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/format';
+import { notifyFinanceEvent } from '@/lib/whatsappNotify';
 
 const SALDO_KEYS = { alle: 'saldo_alle', kelly: 'saldo_kelly' };
 
@@ -85,6 +86,7 @@ export default function Balances({ partner1 = 'Alle', partner2 = 'Kelly', onChan
     const save = () => {
         const clean = String(draft).replace(/\./g, '').replace(',', '.');
         const val = parseFloat(clean) || 0;
+        const oldVal = editing === 'alle' ? (alle ?? 0) : (kelly ?? 0);
         if (editing === 'alle') {
             setAlle(val);
             persist('alle', val);
@@ -92,6 +94,26 @@ export default function Balances({ partner1 = 'Alle', partner2 = 'Kelly', onChan
             setKelly(val);
             persist('kelly', val);
         }
+
+        const targetPartner = editing === 'alle' ? partner1 : partner2;
+        const newAlle = editing === 'alle' ? val : (alle ?? 0);
+        const newKelly = editing === 'kelly' ? val : (kelly ?? 0);
+
+        notifyFinanceEvent({
+            event: 'saldo_updated',
+            partner1,
+            partner2,
+            data: {
+                quem: targetPartner,
+                saldoAnterior: oldVal,
+                novoSaldo: val,
+                diferenca: val - oldVal,
+                saldoAlle: newAlle,
+                saldoKelly: newKelly,
+                saldoTotal: Math.round((newAlle + newKelly) * 100) / 100,
+            }
+        });
+
         setEditing(null);
     };
 

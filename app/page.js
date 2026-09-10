@@ -26,6 +26,7 @@ import AuthScreen from '@/components/AuthScreen';
 import { logAudit } from '@/lib/audit';
 import { deltaSaldo, getPagoPor, setPagoPor, getSaldo } from '@/lib/saldo';
 import { parseLocalDate } from '@/lib/format';
+import { notifyFinanceEvent } from '@/lib/whatsappNotify';
 
 const TABS = [
   { id: 'inicio', label: 'Início', icon: HomeIcon },
@@ -52,6 +53,11 @@ export default function Home() {
 
   const [partner1, setPartner1] = useState('Alle');
   const [partner2, setPartner2] = useState('Kelly');
+
+  // Notificações WhatsApp via n8n
+  const [whatsappEnabled, setWhatsappEnabled] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('fincasal_whatsapp_enabled') !== 'false' : true));
+  const [n8nWebhookUrl, setN8nWebhookUrl] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('fincasal_n8n_webhook_url') || 'https://n8n.manoalles.space/webhook/financas-alerta' : 'https://n8n.manoalles.space/webhook/financas-alerta'));
+  const [isTestingWhatsApp, setIsTestingWhatsApp] = useState(false);
 
   // Modo Privacidade (Ocultar Saldos) e Modal de Lançamento Rápido
   const [isPrivate, setIsPrivate] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('fincasal_privacy') === 'true' : false));
@@ -169,6 +175,16 @@ export default function Home() {
         setTransactions(prev => [data[0], ...prev]);
       }
       setPendingSettleDebt(null);
+      notifyFinanceEvent({
+        event: 'settle_debt',
+        partner1,
+        partner2,
+        data: {
+          devedor: debtor,
+          credor: creditor,
+          valor: cleanAmount,
+        },
+      });
       toast(`Acerto de R$ ${cleanAmount.toFixed(2)} liquidado com sucesso!`);
     } catch (err) {
       toast('Erro ao liquidar acerto: ' + (err?.message || err), 'error');
@@ -193,12 +209,59 @@ export default function Home() {
     }
   };
 
+  // Handlers para Notificações do WhatsApp
+  const handleToggleWhatsAppNotifications = useCallback(async () => {
+    const next = !whatsappEnabled;
+    setWhatsappEnabled(next);
+    try { localStorage.setItem('fincasal_whatsapp_enabled', String(next)); } catch {}
+    saveCloudSetting('n8n_webhook_enabled', next);
+    toast(next ? 'Notificações WhatsApp ativadas!' : 'Notificações WhatsApp desativadas.');
+  }, [whatsappEnabled, toast]);
+
+  const handleUpdateWebhookUrl = useCallback((url) => {
+    setN8nWebhookUrl(url);
+    try { localStorage.setItem('fincasal_n8n_webhook_url', url); } catch {}
+    saveCloudSetting('n8n_webhook_url', url);
+  }, []);
+
+  const handleTestWhatsApp = useCallback(async () => {
+    setIsTestingWhatsApp(true);
+    try {
+      const res = await notifyFinanceEvent({
+        event: 'test',
+        partner1,
+        partner2,
+        data: {
+          mensagem: '🧪 Teste de conexão: Notificações do App de Finanças & Central da Casa ativas no WhatsApp!',
+        },
+      });
+      if (res && res.success) {
+        toast('Disparo de teste enviado com sucesso para o n8n!');
+      } else {
+        toast('Falha ao enviar: ' + (res?.error || 'verifique se o webhook do n8n está ativo'), 'error');
+      }
+    } catch (err) {
+      toast('Erro ao testar: ' + (err?.message || err), 'error');
+    } finally {
+      setIsTestingWhatsApp(false);
+    }
+  }, [partner1, partner2, toast]);
+
   // Sincronização centralizada de configurações na nuvem
   const syncFromCloud = useCallback(async () => {
     try {
       const s = await loadCloudSettings();
       if (typeof s.partner1 === 'string' && s.partner1) setPartner1(s.partner1);
       if (typeof s.partner2 === 'string' && s.partner2) setPartner2(s.partner2);
+      if (typeof s.n8n_webhook_url === 'string' && s.n8n_webhook_url) {
+        setN8nWebhookUrl(s.n8n_webhook_url);
+        try { localStorage.setItem('fincasal_n8n_webhook_url', s.n8n_webhook_url); } catch {}
+      }
+      if (s.n8n_webhook_enabled !== undefined) {
+        const isEn = s.n8n_webhook_enabled !== false && s.n8n_webhook_enabled !== 'false';
+        setWhatsappEnabled(isEn);
+        try { localStorage.setItem('fincasal_whatsapp_enabled', String(isEn)); } catch {}
+      }
       if (s.ajustes_faturas && typeof s.ajustes_faturas === 'object') {
         try { localStorage.setItem('fincasal_ajustes_faturas', JSON.stringify(s.ajustes_faturas)); } catch {}
         setAjusteVersion(v => v + 1);
@@ -694,7 +757,14 @@ export default function Home() {
     }
 
     setTransactions(prev => [data[0], ...prev]);
-  }, [isCreditTrans, quienDeQuem]);
+
+    notifyFinanceEvent({
+      event: 'transaction_created',
+      partner1,
+      partner2,
+      data: inserted || newTransaction,
+    });
+  }, [isCreditTrans, quienDeQuem, partner1, partner2]);
 
   const handleConvertToTransaction = useCallback(async (wishlistItem) => {
     try {
@@ -831,18 +901,25 @@ export default function Home() {
 
   const confirmDeleteTransaction = useCallback(async () => {
     if (!txToDelete) return;
+    const deletedTx = transactions.find(t => t.id === txToDelete);
     try {
       const { error } = await supabase.from('transactions').delete().eq('id', txToDelete);
       if (error) throw error;
       setTransactions(prev => prev.filter(t => t.id !== txToDelete));
       await logAudit({ action: 'delete', entity: 'transaction', entityId: txToDelete, description: 'Transação excluída' });
+      notifyFinanceEvent({
+        event: 'transaction_deleted',
+        partner1,
+        partner2,
+        data: deletedTx || { id: txToDelete },
+      });
       toast('Transação excluída.');
       setTxToDelete(null);
     } catch (error) {
       console.error('Error deleting transaction:', error.message);
       toast('Erro ao excluir: ' + error.message, 'error');
     }
-  }, [txToDelete, toast]);
+  }, [txToDelete, transactions, toast, partner1, partner2]);
 
   const handleResetAllTransactions = useCallback(async () => {
     try {
@@ -946,6 +1023,16 @@ export default function Home() {
         }
         setAjusteVersion(v => v + 1);
         await logAudit({ action: 'reopen_invoice', entity: 'card', entityId: key, description: `Fatura ${cardName} reaberta` });
+        notifyFinanceEvent({
+          event: 'invoice_reopened',
+          partner1,
+          partner2,
+          data: {
+            cartao: cardName,
+            valorFatura: faturaTotal,
+            mes: monthKey,
+          },
+        });
       }
     } catch (error) {
       console.error('Error updating invoice status:', error.message);
@@ -998,6 +1085,18 @@ export default function Home() {
       setAjusteVersion(v => v + 1);
 
       await logAudit({ action: 'pay_invoice', entity: 'card', entityId: key, description: `Fatura ${cardName} paga (${whoPaid})` });
+
+      notifyFinanceEvent({
+        event: 'invoice_paid',
+        partner1,
+        partner2,
+        data: {
+          cartao: cardName,
+          valorFatura: faturaTotal,
+          mes: monthKey,
+          quemPagou: whoPaid === '50_50' ? '50/50 (Ambos)' : whoPaid === 'alle' ? partner1 : partner2,
+        },
+      });
     } catch (error) {
       console.error('Error paying invoice:', error.message);
       toast('Erro ao pagar fatura: ' + error.message, 'error');
@@ -1175,6 +1274,24 @@ export default function Home() {
 
       await logAudit({ action: 'mark_paid', entity: 'transaction', entityId: id, description: `Marcado como pago (${whoPaid})` });
 
+      notifyFinanceEvent({
+        event: 'transaction_paid',
+        partner1,
+        partner2,
+        data: {
+          id,
+          descricao: t ? t.description : 'Transação',
+          valor: t ? t.amount : 0,
+          tipo: t ? t.type : 'expense',
+          categoria: t ? t.category : '',
+          data: t ? t.date : '',
+          pago: true,
+          whoPaid,
+          alleAmount,
+          kellyAmount,
+        },
+      });
+
       if (t && t.fixa && !t.installment_info) {
         const d = new Date((t.date || '').slice(0, 10) + 'T12:00:00');
         const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
@@ -1213,6 +1330,7 @@ export default function Home() {
   }, [transactions, toast, isCreditTrans, partner1, partner2]);
 
   const doMarkUnpaid = useCallback(async (id) => {
+    const target = transactions.find(t => t.id === id);
     try {
       const { error } = await supabase
         .from('transactions')
@@ -1232,11 +1350,23 @@ export default function Home() {
         pago_kelly: 0
       } : t));
       await logAudit({ action: 'mark_unpaid', entity: 'transaction', entityId: id, description: 'Marcado como não pago' });
+      notifyFinanceEvent({
+        event: 'transaction_updated',
+        partner1,
+        partner2,
+        data: {
+          id,
+          descricao: target ? target.description : 'Transação',
+          valor: target ? target.amount : 0,
+          pago: false,
+          status: 'Reaberta / Pendente',
+        },
+      });
     } catch (error) {
       console.error('Error updating transaction status:', error.message);
       toast('Erro ao atualizar transação: ' + error.message, 'error');
     }
-  }, [toast]);
+  }, [transactions, toast, partner1, partner2]);
 
   const handleTogglePaid = useCallback((id, newStatus) => {
     const t = transactions.find(x => x.id === id);
@@ -1619,6 +1749,26 @@ export default function Home() {
         meta: { amount: base, installment_info: payload.installment_info, scope },
       });
 
+      notifyFinanceEvent({
+        event: 'transaction_updated',
+        partner1,
+        partner2,
+        data: {
+          id: targetTx.id,
+          descricaoAnterior: targetTx.description,
+          novaDescricao: newValues.description,
+          valorAnterior: targetTx.amount,
+          novoValor: base,
+          tipo: newValues.type,
+          categoria: newValues.category,
+          subcategoria: newValues.subcategoria,
+          quem: newValues.quem,
+          pago: payload.pago,
+          data: newValues.date,
+          escopo: scope,
+        },
+      });
+
       setPendingEditScope(null);
       setEditingTransaction(null);
     } catch (error) {
@@ -1707,12 +1857,23 @@ export default function Home() {
         setTransactions(prev => prev.filter(t => !idsToDelete.includes(t.id)));
         toast(`Todas as ${idsToDelete.length} ocorrências de "${desc}" foram excluídas!`);
       }
+      notifyFinanceEvent({
+        event: 'transaction_deleted',
+        partner1,
+        partner2,
+        data: {
+          description: txObj ? txObj.description : 'Transação',
+          amount: txObj ? txObj.amount : 0,
+          category: txObj ? txObj.category : '',
+        },
+      });
+
       setTxToDelete(null);
     } catch (error) {
       console.error('Error deleting transaction:', error.message);
       toast('Erro ao excluir transação: ' + error.message, 'error');
     }
-  }, [transactions, toast]);
+  }, [transactions, toast, partner1, partner2]);
 
   const handleUpdateTransaction = useCallback((e) => {
     e.preventDefault();
@@ -2409,6 +2570,64 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-xs text-slate-500">Os nomes são salvos automaticamente e sincronizados entre os aparelhos.</p>
+              </CardContent>
+            </Card>
+
+            {/* Configuração de Notificações WhatsApp & n8n */}
+            <Card className="animate-slide-up border-emerald-500/30 bg-gradient-to-br from-[#0c1f1c] via-[#121827] to-[#121827] shadow-xl">
+              <CardContent className="p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-emerald-500/20 pb-4">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span className="text-emerald-400 text-xl">📱</span> Notificações WhatsApp (n8n)
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Dispara alertas em tempo real de novas despesas, receitas e alterações de saldo para o WhatsApp seu e da sua esposa.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleToggleWhatsAppNotifications}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-black border transition-all cursor-pointer shadow-md ${
+                      whatsappEnabled
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
+                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    {whatsappEnabled ? '🔔 Notificações Ativas' : '🔕 Notificações Desativadas'}
+                  </button>
+                </div>
+
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                      <span>URL do Webhook no n8n</span>
+                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                        Sincronizado na nuvem
+                      </span>
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        placeholder="https://n8n.manoalles.space/webhook/financas-alerta"
+                        className="flex-1 bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all font-mono"
+                        value={n8nWebhookUrl}
+                        onChange={(e) => handleUpdateWebhookUrl(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleTestWhatsApp}
+                        disabled={isTestingWhatsApp}
+                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95"
+                      >
+                        {isTestingWhatsApp ? 'Enviando...' : '🧪 Enviar Notificação de Teste'}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      💡 <strong>Relatório Diário Noturno:</strong> Já está pré-configurado no workflow do n8n para rodar todo dia às <strong>21:00</strong>. Você pode alterar o horário quando quiser abrindo o nó no n8n.
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
