@@ -93,6 +93,8 @@ export default function Home() {
   const [transactionStatusFilter, setTransactionStatusFilter] = useState('all');
   const [selectedCardFilter, setSelectedCardFilter] = useState(null);
   const [expandedPurchases, setExpandedPurchases] = useState(null);
+  const [cardSelectedFatura, setCardSelectedFatura] = useState({});
+  const [cardPurchasesTab, setCardPurchasesTab] = useState({});
 
   // Estados de Segurança / PIN Lock
   const [pinHash, setPinHash] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('fincasal_pin_hash') || '' : ''));
@@ -600,15 +602,14 @@ export default function Home() {
     return transactions.filter(t => {
       if (!t || !t.date) return false;
       if (t.type === 'credit' && t.card_name) {
-        const targetCard = cartoes.find(c => c && c.nome === t.card_name);
-        const tInvoice = t.fatura_mes || (targetCard ? getCardInvoiceMonth(targetCard, t.date) : null);
+        const tInvoice = t.fatura_mes || (t.date ? t.date.slice(0, 7) : null);
         if (tInvoice) return tInvoice === currentMonthKey;
       }
       const d = parseLocalDate(t.date);
       if (!d) return false;
       return d.getMonth() === viewMonth && d.getFullYear() === viewYear;
     });
-  }, [transactions, viewDate, cartoes]);
+  }, [transactions, viewDate]);
 
   const cardsSummary = useMemo(() => {
     void ajusteVersion;
@@ -620,22 +621,60 @@ export default function Home() {
     const todayDay = new Date().getDate();
 
     return cartoes.map(card => {
-      const matches = transactions.filter(t => {
-        if (!t || !t.date) return false;
-        if (t.card_name !== card.nome || t.type !== 'credit') return false;
-        const tInvoice = t.fatura_mes || getCardInvoiceMonth(card, t.date);
-        return tInvoice === monthKey;
+      const cardTxs = transactions.filter(t => t && t.card_name === card.nome && t.type === 'credit');
+      const allPurchases = [...cardTxs].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+      const allMonths = new Set();
+      cardTxs.forEach(t => {
+        const inv = t.fatura_mes || (t.date ? t.date.slice(0, 7) : null);
+        if (inv) allMonths.add(inv);
+      });
+      Object.keys(ajustes).forEach(k => {
+        if (k.startsWith(card.nome + '|')) allMonths.add(k.split('|')[1]);
+      });
+      allMonths.add(monthKey);
+
+      const now = new Date();
+      const currentCalMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const nextCalMonth = `${now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear()}-${String((now.getMonth() + 2) % 12 || 12).padStart(2, '0')}`;
+      allMonths.add(currentCalMonth);
+      allMonths.add(nextCalMonth);
+
+      const faturasMap = {};
+      Array.from(allMonths).sort().reverse().forEach(m => {
+        const mKey = `${card.nome}|${m}`;
+        const mMatches = cardTxs.filter(t => (t.fatura_mes || (t.date ? t.date.slice(0, 7) : '')) === m);
+        const mSoma = mMatches.reduce((a, t) => a + Number(t.amount || 0), 0);
+        const mFatura = ajustes[mKey] != null ? Number(ajustes[mKey]) : mSoma;
+        const mPaidStatus = faturasPagas[mKey];
+        const mIsPaid = typeof mPaidStatus === 'boolean'
+          ? mPaidStatus
+          : (mMatches.length > 0 && mMatches.every(t => t.pago));
+
+        faturasMap[m] = {
+          monthKey: m,
+          amount: mFatura,
+          somaCompras: mSoma,
+          isAjustada: ajustes[mKey] != null,
+          isPaga: mIsPaid,
+          purchases: mMatches,
+        };
       });
 
-      const soma = matches.reduce((acc, t) => acc + Number(t.amount || 0), 0);
-      const key = `${card.nome}|${monthKey}`;
-      const ajustado = ajustes[key];
-      const faturaAtual = ajustado != null ? Number(ajustado) : soma;
-      const isAjustada = ajustado != null;
-      const manualPaidStatus = faturasPagas[key];
-      const isPaga = typeof manualPaidStatus === 'boolean'
-        ? manualPaidStatus
-        : (matches.length > 0 && matches.every(t => t.pago));
+      const currentFaturaData = faturasMap[monthKey] || {
+        monthKey,
+        amount: 0,
+        somaCompras: 0,
+        isAjustada: false,
+        isPaga: false,
+        purchases: [],
+      };
+
+      const faturaAtual = currentFaturaData.amount;
+      const soma = currentFaturaData.somaCompras;
+      const isAjustada = currentFaturaData.isAjustada;
+      const isPaga = currentFaturaData.isPaga;
+      const matches = currentFaturaData.purchases;
       const limite = Number(card.limite || 0);
 
       // Indicador de Melhor Dia de Compra (dia do fechamento até +3 dias)
@@ -644,30 +683,10 @@ export default function Home() {
                           (fechamento > 27 && (todayDay >= fechamento || todayDay <= (fechamento + 3) % 30));
 
       // Total de limite comprometido/utilizado no cartão (todas as faturas e parcelas em aberto)
-      const cardTxs = transactions.filter(t => t && t.card_name === card.nome && t.type === 'credit');
-      const allMonths = new Set();
-      cardTxs.forEach(t => {
-        const inv = t.fatura_mes || getCardInvoiceMonth(card, t.date);
-        if (inv) allMonths.add(inv);
-        else if (t.date) allMonths.add(t.date.slice(0, 7));
-      });
-      Object.keys(ajustes).forEach(k => {
-        if (k.startsWith(card.nome + '|')) allMonths.add(k.split('|')[1]);
-      });
-
       let totalUtilizado = 0;
-      Array.from(allMonths).forEach(m => {
-        const mKey = `${card.nome}|${m}`;
-        const mMatches = cardTxs.filter(t => (t.fatura_mes || getCardInvoiceMonth(card, t.date) || (t.date || '').slice(0, 7)) === m);
-        const mSoma = mMatches.reduce((a, t) => a + Number(t.amount || 0), 0);
-        const mFatura = ajustes[mKey] != null ? Number(ajustes[mKey]) : mSoma;
-        const mPaidStatus = faturasPagas[mKey];
-        const mIsPaid = typeof mPaidStatus === 'boolean'
-          ? mPaidStatus
-          : (mMatches.length > 0 && mMatches.every(t => t.pago));
-
-        if (!mIsPaid && mFatura > 0) {
-          totalUtilizado += mFatura;
+      Object.values(faturasMap).forEach(f => {
+        if (!f.isPaga && f.amount > 0) {
+          totalUtilizado += f.amount;
         }
       });
 
@@ -686,6 +705,9 @@ export default function Home() {
         purchases: matches,
         disponivel,
         percentual,
+        allPurchases,
+        faturasMap,
+        faturasKeys: Object.keys(faturasMap).sort().reverse(),
       };
     });
   }, [cartoes, transactions, viewDate, ajusteVersion]);
@@ -962,19 +984,19 @@ export default function Home() {
     }
   }, [toast, pinHash, resetPin]);
 
-  const handlePayInvoice = useCallback(async (cardName, targetStatus) => {
+  const handlePayInvoice = useCallback(async (cardName, targetStatus, customMonthKey = null) => {
     try {
       const viewMonth = viewDate.getMonth();
       const viewYear = viewDate.getFullYear();
-      const monthKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
+      const defaultMonthKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
+      const monthKey = customMonthKey || defaultMonthKey;
       const key = `${cardName}|${monthKey}`;
       
       const ajustes = getAjustesFaturas();
-      const targetCard = cartoes.find(c => c && c.nome === cardName);
       const cardTxs = transactions.filter(t => {
         if (!t || !t.date) return false;
         if (t.card_name !== cardName || t.type !== 'credit') return false;
-        const tInvoice = t.fatura_mes || (targetCard ? getCardInvoiceMonth(targetCard, t.date) : null);
+        const tInvoice = t.fatura_mes || (t.date ? t.date.slice(0, 7) : null);
         return tInvoice === monthKey;
       });
 
@@ -2069,6 +2091,7 @@ export default function Home() {
 
   const monthName = viewDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+  const viewMonthKey = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
 
   const openTransactionsWithPending = () => {
     setTransactionStatusFilter('pending');
@@ -2352,160 +2375,290 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {cardsSummary.map((card) => (
-                      <Card key={card.id} className="bg-[#1e293b] border-slate-800 shadow-xl overflow-hidden group hover:border-slate-700 transition-all">
-                        <CardContent className="p-6 space-y-6">
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-xl shrink-0 ${
-                                card.nome === 'Nubank' ? 'bg-[#8a05be]' :
-                                card.nome === 'Inter' ? 'bg-[#ff7a00]' :
-                                card.nome === 'Sicoob' ? 'bg-[#003641]' : 'bg-[#17469e]'
-                              }`}>
-                                {card.nome.charAt(0)}
+                    {cardsSummary.map((card) => {
+                      const activeFaturaKey = cardSelectedFatura[card.nome] || viewMonthKey;
+                      const activeFaturaData = activeFaturaKey === 'todas'
+                        ? null
+                        : (card.faturasMap?.[activeFaturaKey] || {
+                            monthKey: activeFaturaKey,
+                            amount: card.faturaAtual,
+                            somaCompras: card.somaCompras,
+                            isPaga: card.isPaga,
+                            isAjustada: card.isAjustada,
+                            purchases: card.purchases,
+                          });
+
+                      const currentTab = cardPurchasesTab[card.nome] || 'fatura';
+                      const displayedPurchases = currentTab === 'todas' || activeFaturaKey === 'todas'
+                        ? (card.allPurchases || [])
+                        : (activeFaturaData?.purchases || []);
+
+                      const displayAmountVal = activeFaturaKey === 'todas'
+                        ? (card.allPurchases || []).reduce((acc, t) => acc + Number(t.amount || 0), 0)
+                        : (activeFaturaData ? activeFaturaData.amount : card.faturaAtual);
+
+                      const displayIsPaga = activeFaturaKey === 'todas'
+                        ? false
+                        : (activeFaturaData ? activeFaturaData.isPaga : card.isPaga);
+
+                      const displayIsAjustada = activeFaturaKey === 'todas'
+                        ? false
+                        : (activeFaturaData ? activeFaturaData.isAjustada : card.isAjustada);
+
+                      const displaySomaCompras = activeFaturaKey === 'todas'
+                        ? displayAmountVal
+                        : (activeFaturaData ? activeFaturaData.somaCompras : card.somaCompras);
+
+                      return (
+                        <Card key={card.id} className="bg-[#1e293b] border-slate-800 shadow-xl overflow-hidden group hover:border-slate-700 transition-all">
+                          <CardContent className="p-5 sm:p-6 space-y-5">
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-xl shrink-0 ${
+                                  card.nome === 'Nubank' ? 'bg-[#8a05be]' :
+                                  card.nome === 'Inter' ? 'bg-[#ff7a00]' :
+                                  card.nome === 'Sicoob' ? 'bg-[#003641]' : 'bg-[#17469e]'
+                                }`}>
+                                  {card.nome.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <h3 className="font-bold text-lg text-white truncate">{card.nome}</h3>
+                                  <p className="text-xs text-slate-400 uppercase tracking-wider">{card.bandeira || 'MasterCard'}</p>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <h3 className="font-bold text-lg text-white truncate">{card.nome}</h3>
-                                <p className="text-xs text-slate-400 uppercase tracking-wider">{card.bandeira || 'MasterCard'}</p>
+
+                              <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+                                {card.isMelhorDia && (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse shadow-sm">
+                                    ⭐ Melhor dia!
+                                  </span>
+                                )}
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
+                                  displayIsPaga
+                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                                }`}>
+                                  {displayIsPaga ? 'Paga' : 'Aberta'}
+                                </span>
+                                {displayIsAjustada && (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+                                    AJUSTADA
+                                  </span>
+                                )}
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
-                              {card.isMelhorDia && (
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse shadow-sm">
-                                  ⭐ Melhor dia!
-                                </span>
-                              )}
-                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
-                                card.isPaga
-                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                                : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                              }`}>
-                                {card.isPaga ? 'Paga' : 'Aberta'}
-                              </span>
-                              {card.isAjustada && (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold border bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
-                                  AJUSTADA
-                                </span>
-                              )}
+                            <div className="grid grid-cols-3 gap-2 text-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
+                              <div>
+                                <p className="text-[10px] text-slate-500 uppercase font-black">Limite</p>
+                                <p className="text-xs font-bold text-slate-300">R${Number(card.limite).toLocaleString('pt-BR')}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-red-400 uppercase font-black" title="Total utilizado em compras e parcelas pendentes">Utilizado</p>
+                                <p className="text-xs font-bold text-red-400">R${(card.totalUtilizado != null ? card.totalUtilizado : card.faturaAtual).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-emerald-400 uppercase font-black" title="Limite disponível restante no cartão">Disponível</p>
+                                <p className="text-xs font-bold text-emerald-400">R${card.disponivel.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                              </div>
                             </div>
-                          </div>
 
-                          <div className="grid grid-cols-3 gap-2 text-center bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
-                            <div>
-                              <p className="text-[10px] text-slate-500 uppercase font-black">Limite</p>
-                              <p className="text-xs font-bold text-slate-300">R${Number(card.limite).toLocaleString('pt-BR')}</p>
+                            <div className="space-y-2">
+                              <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full transition-all duration-1000 ${card.percentual > 80 ? 'bg-red-500' : 'bg-indigo-500'}`}
+                                  style={{ width: `${Math.min(card.percentual, 100)}%` }}
+                                />
+                              </div>
+                              <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase">
+                                <span className="text-slate-300">{Math.round(card.percentual)}% utilizado</span>
+                                <span className="text-emerald-400">Disponível: {Math.max(0, Math.round(100 - card.percentual))}%</span>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-[10px] text-red-400 uppercase font-black" title="Total utilizado em compras e parcelas pendentes">Utilizado</p>
-                              <p className="text-xs font-bold text-red-400">R${(card.totalUtilizado != null ? card.totalUtilizado : card.faturaAtual).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-emerald-400 uppercase font-black" title="Limite disponível restante no cartão">Disponível</p>
-                              <p className="text-xs font-bold text-emerald-400">R${card.disponivel.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                            </div>
-                          </div>
 
-                          <div className="space-y-2">
-                            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full transition-all duration-1000 ${card.percentual > 80 ? 'bg-red-500' : 'bg-indigo-500'}`}
-                                style={{ width: `${Math.min(card.percentual, 100)}%` }}
-                              />
-                            </div>
-                            <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase">
-                              <span className="text-slate-300">{Math.round(card.percentual)}% utilizado</span>
-                              <span className="text-emerald-400">Disponível: {Math.max(0, Math.round(100 - card.percentual))}%</span>
-                            </div>
-                          </div>
-
-                          <div className="flex justify-between items-end pt-4 border-t border-slate-800">
-                            <div className="text-[10px] text-slate-400 space-y-1">
-                              <p>Vencimento: <span className="text-slate-200">dia {card.vencimento}</span></p>
-                              <p>Fechamento: <span className="text-slate-200">dia {card.fechamento}</span></p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[10px] text-slate-500 uppercase font-black">Fatura {monthLabel}</p>
-                              <p className="text-xl font-black text-white">R$ {card.faturaAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                              {card.isAjustada && card.somaCompras > 0 && Math.abs(card.somaCompras - card.faturaAtual) > 0.01 && (
-                                <p className="text-[9px] text-slate-400">
-                                  Lançamentos: R$ {card.somaCompras.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            {/* Detalhes de Fatura e Datas */}
+                            <div className="flex justify-between items-end pt-3 border-t border-slate-800">
+                              <div className="text-[10px] text-slate-400 space-y-1">
+                                <p>Vencimento: <span className="text-slate-200">dia {card.vencimento}</span></p>
+                                <p>Fechamento: <span className="text-slate-200">dia {card.fechamento}</span></p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] text-slate-500 uppercase font-black">
+                                  Fatura {activeFaturaKey === 'todas' ? 'Geral' : formatInvoiceMonth(activeFaturaKey)}
                                 </p>
-                              )}
+                                <p className="text-xl font-black text-white">
+                                  R$ {displayAmountVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </p>
+                                {displayIsAjustada && displaySomaCompras > 0 && Math.abs(displaySomaCompras - displayAmountVal) > 0.01 && (
+                                  <p className="text-[9px] text-slate-400">
+                                    Lançamentos: R$ {displaySomaCompras.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
 
-                          <button
-                            onClick={() => setExpandedPurchases(expandedPurchases === card.nome ? null : card.nome)}
-                            className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] font-black rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-300 ${expandedPurchases === card.nome ? 'rotate-180' : ''}`} />
-                            {expandedPurchases === card.nome ? 'OCULTAR COMPRAS' : `VER COMPRAS (${card.totalItems})`}
-                          </button>
-                          {expandedPurchases === card.nome && (
-                            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                              {card.purchases.length === 0 ? (
-                                <p className="text-[11px] text-slate-500 text-center py-3">Nenhuma compra nesta fatura.</p>
-                              ) : (
-                                card.purchases.map((p) => (
-                                  <div key={p.id} className="flex items-center justify-between text-[11px] rounded-lg bg-slate-900/60 px-2.5 py-1.5 border border-slate-800/60">
-                                    <div className="min-w-0">
-                                      <p className="truncate text-slate-200 font-medium">{p.description}</p>
-                                      <p className="text-[9px] text-slate-500">
-                                        {p.installment_info ? `${p.installment_info} • ` : ''}
-                                        {new Date(p.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                                        {p.fatura_mes && ` • Fatura ${formatInvoiceMonth(p.fatura_mes)}`}
-                                      </p>
+                            {/* Seletor Rápido de Fatura do Cartão */}
+                            <div className="flex items-center justify-between gap-2 bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
+                              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
+                                <CreditCard className="h-3.5 w-3.5 text-indigo-400" /> Fatura:
+                              </span>
+                              <select
+                                value={activeFaturaKey}
+                                onChange={(e) => setCardSelectedFatura(prev => ({ ...prev, [card.nome]: e.target.value }))}
+                                className="bg-slate-800 text-xs font-bold text-slate-100 rounded-lg px-2.5 py-1 border border-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-0"
+                              >
+                                {(card.faturasKeys || []).map(fKey => {
+                                  const fData = card.faturasMap?.[fKey];
+                                  const count = fData?.purchases?.length || 0;
+                                  const statusTag = fData?.isPaga ? '✓ Paga' : '⏳ Aberta';
+                                  return (
+                                    <option key={fKey} value={fKey}>
+                                      {formatInvoiceMonth(fKey)} ({statusTag} • {count} {count === 1 ? 'despesa' : 'despesas'})
+                                    </option>
+                                  );
+                                })}
+                                <option value="todas">📋 Todas as Compras ({(card.allPurchases || []).length})</option>
+                              </select>
+                            </div>
+
+                            {/* Botão Ver Despesas Associadas */}
+                            <button
+                              onClick={() => setExpandedPurchases(expandedPurchases === card.nome ? null : card.nome)}
+                              className="w-full py-2.5 bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white text-[11px] font-black rounded-xl transition-all border border-slate-800 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                            >
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-300 ${expandedPurchases === card.nome ? 'rotate-180' : ''}`} />
+                              {expandedPurchases === card.nome 
+                                ? 'OCULTAR DESPESAS ASSOCIADAS' 
+                                : `VER DESPESAS ASSOCIADAS (${displayedPurchases.length})`}
+                            </button>
+
+                            {/* Conteúdo Expandido das Despesas */}
+                            {expandedPurchases === card.nome && (
+                              <div className="space-y-2.5 animate-fade-in">
+                                {/* Toggle Desta Fatura vs Todas */}
+                                <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800">
+                                  <button
+                                    type="button"
+                                    onClick={() => setCardPurchasesTab(prev => ({ ...prev, [card.nome]: 'fatura' }))}
+                                    className={`flex-1 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                                      currentTab === 'fatura' && activeFaturaKey !== 'todas'
+                                        ? 'bg-indigo-600 text-white shadow'
+                                        : 'text-slate-400 hover:text-white'
+                                    }`}
+                                  >
+                                    Desta Fatura ({activeFaturaData?.purchases?.length || 0})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCardPurchasesTab(prev => ({ ...prev, [card.nome]: 'todas' }))}
+                                    className={`flex-1 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                                      currentTab === 'todas' || activeFaturaKey === 'todas'
+                                        ? 'bg-indigo-600 text-white shadow'
+                                        : 'text-slate-400 hover:text-white'
+                                    }`}
+                                  >
+                                    Todas do Cartão ({(card.allPurchases || []).length})
+                                  </button>
+                                </div>
+
+                                {/* Lista de Despesas */}
+                                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                                  {displayedPurchases.length === 0 ? (
+                                    <div className="p-3.5 text-center bg-slate-900/40 rounded-xl border border-slate-800 space-y-1.5">
+                                      <p className="text-[11px] text-slate-400">Nenhuma despesa nesta fatura.</p>
+                                      {(card.allPurchases || []).length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setCardPurchasesTab(prev => ({ ...prev, [card.nome]: 'todas' }))}
+                                          className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
+                                        >
+                                          Ver todas as {(card.allPurchases || []).length} despesas associadas a este cartão
+                                        </button>
+                                      )}
                                     </div>
-                                    <span className={`text-xs font-bold shrink-0 ml-2 ${p.pago ? 'text-emerald-400' : 'text-purple-300'}`}>
-                                      R$ {Number(p.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}{p.pago ? ' ✓' : ''}
-                                    </span>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          )}
+                                  ) : (
+                                    displayedPurchases.map((p) => {
+                                      const pFatura = p.fatura_mes || (p.date ? p.date.slice(0, 7) : '');
+                                      return (
+                                        <div key={p.id} className="flex items-center justify-between text-[11px] rounded-xl bg-slate-900/70 hover:bg-slate-900 px-3 py-2 border border-slate-800/80 transition-all">
+                                          <div className="min-w-0 flex-1 pr-2">
+                                            <p className="truncate text-slate-100 font-bold text-xs">{p.description}</p>
+                                            <div className="flex items-center gap-1.5 text-[9px] text-slate-400 flex-wrap mt-0.5">
+                                              <span>{new Date(p.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                              {p.installment_info && (
+                                                <span className="font-extrabold text-indigo-300 bg-indigo-500/20 px-1 rounded">
+                                                  {p.installment_info}
+                                                </span>
+                                              )}
+                                              {pFatura && (
+                                                <span className="font-bold text-violet-300 bg-violet-500/15 px-1.5 py-0.2 rounded border border-violet-500/20">
+                                                  Fatura {formatInvoiceMonth(pFatura)}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className={`text-xs font-black ${p.pago ? 'text-emerald-400' : 'text-purple-300'}`}>
+                                              R$ {Number(p.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            </span>
+                                            <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded ${
+                                              p.pago 
+                                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                            }`}>
+                                              {p.pago ? 'Paga' : 'Aberta'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            )}
 
-                          <div className="flex flex-col gap-2">
-                            <div className="flex gap-2">
+                            {/* Ações da Fatura */}
+                            <div className="flex flex-col gap-2">
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handlePayInvoice(card.nome, !displayIsPaga, activeFaturaKey !== 'todas' ? activeFaturaKey : viewMonthKey)}
+                                  className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-2 cursor-pointer ${
+                                    displayIsPaga
+                                    ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500/30 shadow-lg shadow-emerald-500/20'
+                                  }`}
+                                >
+                                  {displayIsPaga ? 'REABRIR FATURA' : 'PAGAR FATURA'}
+                                </button>
+                                <button
+                                  onClick={() => filterByCard(card.nome)}
+                                  className={`px-3 py-2.5 text-xs font-black rounded-xl transition-all border cursor-pointer ${
+                                    selectedCardFilter === card.nome
+                                    ? 'bg-purple-500/30 text-purple-300 border-purple-500/50'
+                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                                  }`}
+                                  title="Filtrar todas as compras deste cartão no extrato"
+                                >
+                                  COMPRAS NO EXTRATO
+                                </button>
+                              </div>
                               <button
-                                onClick={() => handlePayInvoice(card.nome, !card.isPaga)}
-                                className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-2 cursor-pointer ${
-                                  card.isPaga
-                                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500/30 shadow-lg shadow-emerald-500/20'
-                                }`}
+                                onClick={() => openFaturaAdjust(card)}
+                                className="w-full py-2 bg-indigo-950/50 hover:bg-indigo-900/50 text-indigo-300 hover:text-indigo-200 text-[11px] font-bold rounded-xl transition-all border border-indigo-500/30 flex items-center justify-center gap-1.5 cursor-pointer"
                               >
-                                {card.isPaga ? 'REABRIR FATURA' : 'PAGAR FATURA'}
+                                <SlidersHorizontal className="h-3 w-3" /> REAJUSTAR FATURA
                               </button>
                               <button
-                                onClick={() => filterByCard(card.nome)}
-                                className={`px-3 py-2.5 text-xs font-black rounded-xl transition-all border cursor-pointer ${
-                                  selectedCardFilter === card.nome
-                                  ? 'bg-purple-500/30 text-purple-300 border-purple-500/50'
-                                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                                }`}
-                                title="Filtrar compras deste cartão"
+                                onClick={() => { setEditingCard(card); setIsEditModalOpen(true); }}
+                                className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-[11px] font-bold rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
                               >
-                                COMPRAS
+                                <Edit3 className="h-3 w-3" /> Reajustar Limite e Datas
                               </button>
                             </div>
-                            <button
-                              onClick={() => openFaturaAdjust(card)}
-                              className="w-full py-2 bg-indigo-950/50 hover:bg-indigo-900/50 text-indigo-300 hover:text-indigo-200 text-[11px] font-bold rounded-xl transition-all border border-indigo-500/30 flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <SlidersHorizontal className="h-3 w-3" /> REAJUSTAR FATURA
-                            </button>
-                            <button
-                              onClick={() => { setEditingCard(card); setIsEditModalOpen(true); }}
-                              className="w-full py-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-[11px] font-bold rounded-xl transition-all border border-slate-800/80 flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <Edit3 className="h-3 w-3" /> Reajustar Limite e Datas
-                            </button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
                 )}
               </section>

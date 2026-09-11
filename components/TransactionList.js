@@ -81,7 +81,7 @@ export default function TransactionList({
             );
         }
 
-        if (viewDate) {
+        if (viewDate && !selectedCardFilter) {
             const vYear = viewDate.getFullYear();
             const vMonth = viewDate.getMonth() + 1;
             const vMonthKey = `${vYear}-${String(vMonth).padStart(2, '0')}`;
@@ -89,11 +89,7 @@ export default function TransactionList({
             list = list.filter(t => {
                 if (!t) return false;
                 if (t.type === 'credit') {
-                    if (t.fatura_mes) {
-                        return t.fatura_mes === vMonthKey;
-                    }
-                    const targetCard = (cartoes || []).find(c => c && c.nome === t.card_name);
-                    const calcMonth = targetCard ? getCardInvoiceMonth(targetCard, t.date) : (t.date ? t.date.slice(0, 7) : null);
+                    const calcMonth = t.fatura_mes || (t.date ? t.date.slice(0, 7) : null);
                     return calcMonth === vMonthKey;
                 }
                 if (!t.date) return false;
@@ -109,11 +105,7 @@ export default function TransactionList({
                 if (!t) return false;
                 const matchesFaturaCard = t.card_name === selectedFaturaFilter.cardNome;
                 if (!matchesFaturaCard) return false;
-                if (t.fatura_mes) {
-                    return t.fatura_mes === filterMonthKey;
-                }
-                const targetCard = (cartoes || []).find(c => c && c.nome === t.card_name);
-                const calcMonth = targetCard ? getCardInvoiceMonth(targetCard, t.date) : (t.date ? t.date.slice(0, 7) : null);
+                const calcMonth = t.fatura_mes || (t.date ? t.date.slice(0, 7) : null);
                 return calcMonth === filterMonthKey;
             });
         }
@@ -454,7 +446,7 @@ export default function TransactionList({
                             onClick={onClearCardFilter}
                             className="text-[11px] font-bold text-purple-300 hover:text-white flex items-center gap-1 bg-purple-500/20 px-2 py-0.5 rounded-lg border border-purple-500/30 cursor-pointer"
                         >
-                            Filtro: {selectedCardFilter} <X className="h-3 w-3" />
+                            Filtro: {selectedCardFilter} ({filteredTransactions.length} {filteredTransactions.length === 1 ? 'item' : 'itens'}) <X className="h-3 w-3" />
                         </button>
                     )}
                 </div>
