@@ -25,7 +25,7 @@ import { useSession, REQUIRE_AUTH, signOut } from '@/lib/auth';
 import AuthScreen from '@/components/AuthScreen';
 import { logAudit } from '@/lib/audit';
 import { deltaSaldo, getPagoPor, setPagoPor, getSaldo } from '@/lib/saldo';
-import { parseLocalDate } from '@/lib/format';
+import { parseLocalDate, getCardInvoiceMonth, formatInvoiceMonth } from '@/lib/format';
 import { notifyFinanceEvent } from '@/lib/whatsappNotify';
 
 const TABS = [
@@ -596,13 +596,19 @@ export default function Home() {
   const monthTransactions = useMemo(() => {
     const viewMonth = viewDate.getMonth();
     const viewYear = viewDate.getFullYear();
+    const currentMonthKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
     return transactions.filter(t => {
       if (!t || !t.date) return false;
+      if (t.type === 'credit' && t.card_name) {
+        const targetCard = cartoes.find(c => c && c.nome === t.card_name);
+        const tInvoice = t.fatura_mes || (targetCard ? getCardInvoiceMonth(targetCard, t.date) : null);
+        if (tInvoice) return tInvoice === currentMonthKey;
+      }
       const d = parseLocalDate(t.date);
       if (!d) return false;
       return d.getMonth() === viewMonth && d.getFullYear() === viewYear;
     });
-  }, [transactions, viewDate]);
+  }, [transactions, viewDate, cartoes]);
 
   const cardsSummary = useMemo(() => {
     void ajusteVersion;
@@ -616,12 +622,9 @@ export default function Home() {
     return cartoes.map(card => {
       const matches = transactions.filter(t => {
         if (!t || !t.date) return false;
-        const d = parseLocalDate(t.date);
-        if (!d) return false;
-        return t.card_name === card.nome &&
-               t.type === 'credit' &&
-               d.getMonth() === viewMonth &&
-               d.getFullYear() === viewYear;
+        if (t.card_name !== card.nome || t.type !== 'credit') return false;
+        const tInvoice = t.fatura_mes || getCardInvoiceMonth(card, t.date);
+        return tInvoice === monthKey;
       });
 
       const soma = matches.reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -644,7 +647,9 @@ export default function Home() {
       const cardTxs = transactions.filter(t => t && t.card_name === card.nome && t.type === 'credit');
       const allMonths = new Set();
       cardTxs.forEach(t => {
-        if (t.date) allMonths.add(t.date.slice(0, 7));
+        const inv = t.fatura_mes || getCardInvoiceMonth(card, t.date);
+        if (inv) allMonths.add(inv);
+        else if (t.date) allMonths.add(t.date.slice(0, 7));
       });
       Object.keys(ajustes).forEach(k => {
         if (k.startsWith(card.nome + '|')) allMonths.add(k.split('|')[1]);
@@ -653,7 +658,7 @@ export default function Home() {
       let totalUtilizado = 0;
       Array.from(allMonths).forEach(m => {
         const mKey = `${card.nome}|${m}`;
-        const mMatches = cardTxs.filter(t => (t.date || '').slice(0, 7) === m);
+        const mMatches = cardTxs.filter(t => (t.fatura_mes || getCardInvoiceMonth(card, t.date) || (t.date || '').slice(0, 7)) === m);
         const mSoma = mMatches.reduce((a, t) => a + Number(t.amount || 0), 0);
         const mFatura = ajustes[mKey] != null ? Number(ajustes[mKey]) : mSoma;
         const mPaidStatus = faturasPagas[mKey];
@@ -672,6 +677,7 @@ export default function Home() {
       return {
         ...card,
         faturaAtual,
+        somaCompras: soma,
         totalUtilizado,
         isAjustada,
         isPaga,
@@ -715,6 +721,10 @@ export default function Home() {
   }, []);
 
   const handleAddTransaction = useCallback(async (newTransaction) => {
+    const calculatedFat = newTransaction.type === 'credit' && newTransaction.cardName
+      ? getCardInvoiceMonth(cartoes.find(c => c && c.nome === newTransaction.cardName), newTransaction.date)
+      : null;
+
     const { data, error } = await supabase
       .from('transactions')
       .insert([{
@@ -724,8 +734,9 @@ export default function Home() {
         category: newTransaction.category,
         date: newTransaction.date,
         card_name: newTransaction.cardName,
+        fatura_mes: newTransaction.faturaMes || calculatedFat,
         installment_info: newTransaction.installmentInfo,
-        pago: newTransaction.pago,
+        pago: newTransaction.type === 'credit' ? false : newTransaction.pago,
         fixa: newTransaction.fixa,
         payment_method: newTransaction.payment_method,
         quem: newTransaction.quem || 'Comum',
@@ -764,7 +775,7 @@ export default function Home() {
       partner2,
       data: inserted || newTransaction,
     });
-  }, [isCreditTrans, quienDeQuem, partner1, partner2]);
+  }, [isCreditTrans, quienDeQuem, partner1, partner2, cartoes]);
 
   const handleConvertToTransaction = useCallback(async (wishlistItem) => {
     try {
@@ -959,14 +970,12 @@ export default function Home() {
       const key = `${cardName}|${monthKey}`;
       
       const ajustes = getAjustesFaturas();
+      const targetCard = cartoes.find(c => c && c.nome === cardName);
       const cardTxs = transactions.filter(t => {
         if (!t || !t.date) return false;
-        const d = parseLocalDate(t.date);
-        if (!d) return false;
-        return t.card_name === cardName &&
-               t.type === 'credit' &&
-               d.getMonth() === viewMonth &&
-               d.getFullYear() === viewYear;
+        if (t.card_name !== cardName || t.type !== 'credit') return false;
+        const tInvoice = t.fatura_mes || (targetCard ? getCardInvoiceMonth(targetCard, t.date) : null);
+        return tInvoice === monthKey;
       });
 
       const soma = cardTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -1038,7 +1047,7 @@ export default function Home() {
       console.error('Error updating invoice status:', error.message);
       toast('Erro ao atualizar fatura: ' + error.message, 'error');
     }
-  }, [transactions, viewDate, toast, partner1, partner2]);
+  }, [transactions, viewDate, toast, partner1, partner2, cartoes]);
 
   const confirmPayInvoice = useCallback(async (whoPaid) => {
     if (!pendingPayInvoice) return;
@@ -1542,7 +1551,8 @@ export default function Home() {
         pago: isPaid,
         fixa: !!newValues.fixa,
         payment_method: newValues.payment_method || 'checking',
-        card_name: newValues.card_name || null,
+        card_name: newValues.type === 'credit' ? newValues.card_name || null : null,
+        fatura_mes: newValues.type === 'credit' ? (newValues.fatura_mes || null) : null,
         installment_info: newValues.installment_info || null,
         pago_por: pagoPorVal,
         pago_alle: pagoAlleVal,
@@ -1558,7 +1568,8 @@ export default function Home() {
         quem: newValues.quem || 'Comum',
         destino: newValues.destino || '',
         payment_method: newValues.payment_method || 'checking',
-        card_name: newValues.card_name || null,
+        card_name: newValues.type === 'credit' ? newValues.card_name || null : null,
+        fatura_mes: newValues.type === 'credit' ? (newValues.fatura_mes || null) : null,
         fixa: !!newValues.fixa,
       };
 
@@ -1587,6 +1598,7 @@ export default function Home() {
             destino: newValues.destino || '',
             installment_info: `${i}/${parcTotal}`,
             card_name: newValues.type === 'credit' ? newValues.card_name || null : null,
+            fatura_mes: newValues.type === 'credit' ? (newValues.fatura_mes || null) : null,
           });
         }
         const { data: ins, error: insErr } = await supabase.from('transactions').insert(inserts).select();
@@ -1919,6 +1931,7 @@ export default function Home() {
       fixa: !!editingTransaction.fixa,
       payment_method: editingTransaction.payment_method || 'checking',
       card_name: editingTransaction.type === 'credit' ? editingTransaction.card_name || null : null,
+      fatura_mes: editingTransaction.type === 'credit' ? (editingTransaction.fatura_mes || null) : null,
       installment_info,
     };
 
@@ -2291,6 +2304,7 @@ export default function Home() {
                     viewDate={viewDate}
                     variaveis={variaveis}
                     isPrivate={isPrivate}
+                    cartoes={cartoes}
                   />
                 </div>
               </div>
@@ -2413,6 +2427,11 @@ export default function Home() {
                             <div className="text-right">
                               <p className="text-[10px] text-slate-500 uppercase font-black">Fatura {monthLabel}</p>
                               <p className="text-xl font-black text-white">R$ {card.faturaAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                              {card.isAjustada && card.somaCompras > 0 && Math.abs(card.somaCompras - card.faturaAtual) > 0.01 && (
+                                <p className="text-[9px] text-slate-400">
+                                  Lançamentos: R$ {card.somaCompras.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </p>
+                              )}
                             </div>
                           </div>
 
@@ -2426,7 +2445,7 @@ export default function Home() {
                           {expandedPurchases === card.nome && (
                             <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                               {card.purchases.length === 0 ? (
-                                <p className="text-[11px] text-slate-500 text-center py-3">Nenhuma compra neste mês.</p>
+                                <p className="text-[11px] text-slate-500 text-center py-3">Nenhuma compra nesta fatura.</p>
                               ) : (
                                 card.purchases.map((p) => (
                                   <div key={p.id} className="flex items-center justify-between text-[11px] rounded-lg bg-slate-900/60 px-2.5 py-1.5 border border-slate-800/60">
@@ -2435,6 +2454,7 @@ export default function Home() {
                                       <p className="text-[9px] text-slate-500">
                                         {p.installment_info ? `${p.installment_info} • ` : ''}
                                         {new Date(p.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                        {p.fatura_mes && ` • Fatura ${formatInvoiceMonth(p.fatura_mes)}`}
                                       </p>
                                     </div>
                                     <span className={`text-xs font-bold shrink-0 ml-2 ${p.pago ? 'text-emerald-400' : 'text-purple-300'}`}>
@@ -3257,18 +3277,35 @@ export default function Home() {
                 </div>
 
                 {editingTransaction.type === 'credit' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cartão</label>
-                  <select
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
-                    value={editingTransaction.card_name || ''}
-                    onChange={(e) => setEditingTransaction({ ...editingTransaction, card_name: e.target.value })}
-                  >
-                    <option value="">— Nenhum —</option>
-                    {cartoes.map((c) => (
-                      <option key={c.id} value={c.nome}>{c.nome}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cartão</label>
+                    <select
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer text-sm"
+                      value={editingTransaction.card_name || ''}
+                      onChange={(e) => {
+                        const nextName = e.target.value;
+                        const cObj = cartoes.find(c => c && c.nome === nextName);
+                        const nextFat = cObj ? getCardInvoiceMonth(cObj, editingTransaction.date) : editingTransaction.fatura_mes;
+                        setEditingTransaction({ ...editingTransaction, card_name: nextName, fatura_mes: nextFat });
+                      }}
+                    >
+                      <option value="">— Nenhum —</option>
+                      {cartoes.map((c) => (
+                        <option key={c.id} value={c.nome}>{c.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-purple-300 uppercase tracking-wider">Fatura de Cobrança (Mês/Ano)</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 2026-10"
+                      className="w-full bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-3 text-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all text-sm font-bold"
+                      value={editingTransaction.fatura_mes || (editingTransaction.card_name ? getCardInvoiceMonth(cartoes.find(c => c && c.nome === editingTransaction.card_name), editingTransaction.date) || '' : '')}
+                      onChange={(e) => setEditingTransaction({ ...editingTransaction, fatura_mes: e.target.value })}
+                    />
+                  </div>
                 </div>
               )}
 

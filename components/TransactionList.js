@@ -15,11 +15,12 @@ import {
     Search
 } from 'lucide-react';
 import CategoryIcon from '@/components/CategoryIcon';
-import { formatCurrency, formatDate, parseLocalDate } from '@/lib/format';
+import { formatCurrency, formatDate, parseLocalDate, getCardInvoiceMonth, formatInvoiceMonth } from '@/lib/format';
 
 export default function TransactionList({ 
     transactions = [], 
     cardsSummary = [],
+    cartoes = [],
     onDelete, 
     onEdit, 
     onTogglePaid, 
@@ -81,8 +82,21 @@ export default function TransactionList({
         }
 
         if (viewDate) {
+            const vYear = viewDate.getFullYear();
+            const vMonth = viewDate.getMonth() + 1;
+            const vMonthKey = `${vYear}-${String(vMonth).padStart(2, '0')}`;
+
             list = list.filter(t => {
-                if (!t || !t.date) return false;
+                if (!t) return false;
+                if (t.type === 'credit') {
+                    if (t.fatura_mes) {
+                        return t.fatura_mes === vMonthKey;
+                    }
+                    const targetCard = (cartoes || []).find(c => c && c.nome === t.card_name);
+                    const calcMonth = targetCard ? getCardInvoiceMonth(targetCard, t.date) : (t.date ? t.date.slice(0, 7) : null);
+                    return calcMonth === vMonthKey;
+                }
+                if (!t.date) return false;
                 const d = parseLocalDate(t.date);
                 if (!d) return false;
                 return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
@@ -90,19 +104,22 @@ export default function TransactionList({
         }
 
         if (selectedFaturaFilter) {
+            const filterMonthKey = `${selectedFaturaFilter.year}-${String(selectedFaturaFilter.month + 1).padStart(2, '0')}`;
             list = list.filter(t => {
-                if (!t || !t.date) return false;
-                const d = parseLocalDate(t.date);
-                if (!d) return false;
-                const matchesFaturaMonth = d.getMonth() === selectedFaturaFilter.month;
-                const matchesFaturaYear = d.getFullYear() === selectedFaturaFilter.year;
+                if (!t) return false;
                 const matchesFaturaCard = t.card_name === selectedFaturaFilter.cardNome;
-                return matchesFaturaMonth && matchesFaturaYear && matchesFaturaCard;
+                if (!matchesFaturaCard) return false;
+                if (t.fatura_mes) {
+                    return t.fatura_mes === filterMonthKey;
+                }
+                const targetCard = (cartoes || []).find(c => c && c.nome === t.card_name);
+                const calcMonth = targetCard ? getCardInvoiceMonth(targetCard, t.date) : (t.date ? t.date.slice(0, 7) : null);
+                return calcMonth === filterMonthKey;
             });
         }
 
         return list;
-    }, [transactions, filter, spenderFilter, searchTerm, selectedCardFilter, viewDate, selectedFaturaFilter]);
+    }, [transactions, filter, spenderFilter, searchTerm, selectedCardFilter, viewDate, selectedFaturaFilter, cartoes]);
 
     const pendingList = useMemo(() => filteredTransactions.filter(t => !t.pago), [filteredTransactions]);
     const paidList = useMemo(() => filteredTransactions.filter(t => t.pago), [filteredTransactions]);
@@ -345,6 +362,14 @@ export default function TransactionList({
                             </span>
                             <span className="text-slate-600">•</span>
                             <span>{formatDate(t.date)}</span>
+                            {t.type === 'credit' && (
+                                <>
+                                    <span className="text-slate-600">•</span>
+                                    <span className="text-[9px] font-bold text-violet-300 bg-violet-500/15 border border-violet-500/20 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                        💳 {t.card_name || 'Cartão'} • Fatura {formatInvoiceMonth(t.fatura_mes || ((cartoes || []).find(c => c && c.nome === t.card_name) ? getCardInvoiceMonth((cartoes || []).find(c => c && c.nome === t.card_name), t.date) : (t.date ? t.date.slice(0, 7) : '')))}
+                                    </span>
+                                </>
+                            )}
                             {t.installment_info && (
                                 <span className="text-[8px] font-black text-indigo-300 bg-indigo-500/15 px-1 py-0.2 rounded">
                                     {t.installment_info}

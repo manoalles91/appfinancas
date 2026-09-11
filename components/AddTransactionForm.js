@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { PlusCircle, CreditCard, ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronUp, Check, Calendar, Tag, User, Layers } from 'lucide-react';
+import { PlusCircle, CreditCard, ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronUp, Check, Calendar, Tag, User, Layers, Info } from 'lucide-react';
 import { getCategories } from '@/lib/categories';
 import { useToast } from '@/components/ui/toast';
+import { getCardInvoiceMonth, formatInvoiceMonth } from '@/lib/format';
 
 const TRANSACTION_TYPES = [
     { value: 'expense', label: 'Despesa', icon: ArrowDownLeft, activeBg: 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 border-rose-500' },
@@ -12,12 +13,24 @@ const TRANSACTION_TYPES = [
     { value: 'credit', label: 'Cartão', icon: CreditCard, activeBg: 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 border-purple-500' },
 ];
 
+function addMonthsToMonthKey(key, count) {
+    if (!key) return key;
+    const parts = String(key).split('-').map(Number);
+    if (parts.length < 2) return key;
+    const [y, m] = parts;
+    const totalMonths = (y * 12) + (m - 1) + count;
+    const newY = Math.floor(totalMonths / 12);
+    const newM = (totalMonths % 12) + 1;
+    return `${newY}-${String(newM).padStart(2, '0')}`;
+}
+
 const initialForm = () => ({
     description: '',
     amount: '',
     type: 'expense',
     category: '',
     date: new Date().toISOString().split('T')[0],
+    faturaMes: '',
     installments: 1,
     cardName: '',
     pago: false,
@@ -74,6 +87,50 @@ export default function AddTransactionForm({
         setFormData(prev => ({ ...prev, subcategoria: item }));
     };
 
+    const selectedCard = useMemo(() => {
+        return (cartoes || []).find(c => c && c.nome === formData.cardName) || (cartoes || [])[0];
+    }, [cartoes, formData.cardName]);
+
+    const calculatedFatura = useMemo(() => {
+        return selectedCard ? getCardInvoiceMonth(selectedCard, formData.date) : '';
+    }, [selectedCard, formData.date]);
+
+    const currentFatura = formData.faturaMes || calculatedFatura || '';
+
+    const faturaOptions = useMemo(() => {
+        const base = calculatedFatura || new Date().toISOString().slice(0, 7);
+        const list = [];
+        for (let i = -1; i <= 4; i++) {
+            const k = addMonthsToMonthKey(base, i);
+            const label = formatInvoiceMonth(k);
+            list.push({
+                key: k,
+                label: k === calculatedFatura ? `${label} (Sugerida)` : label,
+            });
+        }
+        return list;
+    }, [calculatedFatura]);
+
+    const handleDateChange = (newDate) => {
+        const targetCard = (cartoes || []).find(c => c && c.nome === formData.cardName) || (cartoes || [])[0];
+        const nextFatura = targetCard ? getCardInvoiceMonth(targetCard, newDate) : '';
+        setFormData(prev => ({
+            ...prev,
+            date: newDate,
+            faturaMes: nextFatura
+        }));
+    };
+
+    const handleCardChange = (cardName) => {
+        const targetCard = (cartoes || []).find(c => c && c.nome === cardName);
+        const nextFatura = targetCard ? getCardInvoiceMonth(targetCard, formData.date) : '';
+        setFormData(prev => ({
+            ...prev,
+            cardName,
+            faturaMes: nextFatura
+        }));
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         const baseAmount = parseFloat(String(formData.amount).replace(',', '.')) || 0;
@@ -92,7 +149,7 @@ export default function AddTransactionForm({
         let pagoKelly = 0;
         let finalPagoPor = null;
 
-        if (formData.pago) {
+        if (formData.pago && formData.type !== 'credit') {
             finalPagoPor = pagoPor;
             if (pagoPor === 'alle') {
                 pagoAlle = baseAmount;
@@ -110,8 +167,8 @@ export default function AddTransactionForm({
         }
 
         try {
-            const formato = formData.formato === 'fixa'
-                ? 'fixa'
+            const formato = formData.type === 'credit' 
+                ? (parseInt(formData.installments, 10) > 1 ? 'parcelada' : 'unica')
                 : formData.formato === 'parcelada' ? 'parcelada' : 'unica';
             const parcTotal = parseInt(formData.parcelasN, 10) || 0;
             const creditParc = formData.type === 'credit' && (parseInt(formData.installments, 10) || 1) > 1;
@@ -128,12 +185,14 @@ export default function AddTransactionForm({
                     ? baseAmount
                     : Math.round((baseAmount - installmentAmount * (totalParc - 1)) * 100) / 100;
                 const baseDate = new Date(formData.date + 'T12:00:00');
+                const baseFatura = formData.faturaMes || calculatedFatura;
 
                 for (let i = 0; i < totalParc; i++) {
                     const year = baseDate.getFullYear();
                     const month = baseDate.getMonth() + i;
                     const lastDay = new Date(year, month + 1, 0).getDate();
                     const installDate = new Date(year, month, Math.min(baseDate.getDate(), lastDay), 12, 0, 0);
+                    const instFatura = baseFatura ? addMonthsToMonthKey(baseFatura, i) : undefined;
 
                     const isFirst = i === 0;
                     await onAdd({
@@ -143,8 +202,9 @@ export default function AddTransactionForm({
                         category: formData.category || (formData.type === 'income' ? 'Salário' : formData.type === 'credit' ? 'Cartão' : 'Compras'),
                         date: installDate.toISOString(),
                         cardName: formData.type === 'credit' ? formData.cardName : undefined,
+                        faturaMes: formData.type === 'credit' ? instFatura : undefined,
                         installmentInfo: `${i + 1}/${totalParc}`,
-                        pago: isFirst ? formData.pago : false,
+                        pago: formData.type === 'credit' ? false : (isFirst ? formData.pago : false),
                         payment_method: formData.type === 'credit' ? 'credit' : formData.payment_method,
                         quem: finalQuem,
                         subcategoria: formData.subcategoria,
@@ -190,7 +250,8 @@ export default function AddTransactionForm({
                     category: formData.category || (formData.type === 'income' ? 'Salário' : 'Compras'),
                     date: new Date(formData.date + 'T12:00:00').toISOString(),
                     cardName: formData.type === 'credit' ? formData.cardName : undefined,
-                    pago: formData.pago,
+                    faturaMes: formData.type === 'credit' ? (formData.faturaMes || calculatedFatura) : undefined,
+                    pago: formData.type === 'credit' ? false : formData.pago,
                     fixa: false,
                     payment_method: formData.type === 'credit' ? 'credit' : (formData.type === 'income' ? 'checking' : formData.payment_method),
                     quem: finalQuem,
@@ -217,11 +278,17 @@ export default function AddTransactionForm({
     };
 
     const setType = (type) => {
+        const initialCard = cartoes.length > 0 ? (formData.cardName || cartoes[0].nome) : '';
+        const initialCardObj = (cartoes || []).find(c => c && c.nome === initialCard) || (cartoes || [])[0];
+        const initialFatura = initialCardObj ? getCardInvoiceMonth(initialCardObj, formData.date) : '';
+
         setFormData(prev => ({ 
             ...prev, 
             type,
             payment_method: type === 'credit' ? 'credit' : prev.payment_method === 'credit' ? 'checking' : prev.payment_method,
-            cardName: type === 'credit' && !prev.cardName && cartoes.length > 0 ? cartoes[0].nome : prev.cardName
+            cardName: type === 'credit' && !prev.cardName && cartoes.length > 0 ? cartoes[0].nome : prev.cardName,
+            faturaMes: type === 'credit' ? (prev.faturaMes || initialFatura) : '',
+            pago: type === 'credit' ? false : prev.pago
         }));
         if (type === 'credit') setShowAdvanced(true);
     };
@@ -371,132 +438,172 @@ export default function AddTransactionForm({
 
                         {showAdvanced && (
                             <div className="space-y-4 mt-3 p-4 rounded-2xl border border-white/10 bg-[#0a0e1a]/80 animate-fade-in">
-                                {/* Date and Status */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Data</label>
-                                        <input
-                                            type="date"
-                                            value={formData.date}
-                                            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                            className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-indigo-500"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status do Pagamento</label>
-                                        <button
-                                            type="button"
-                                            onClick={() => setFormData({ ...formData, pago: !formData.pago })}
-                                            className={`w-full py-2.5 rounded-xl text-xs font-black border transition-all cursor-pointer ${
-                                                formData.pago
-                                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                                                    : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                                            }`}
-                                        >
-                                            {formData.pago ? '✅ JÁ PAGO' : '⏳ PENDENTE'}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Se marcado como JÁ PAGO: escolher quem pagou */}
-                                {formData.pago && (
-                                    <div className="space-y-2 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 animate-fade-in">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
-                                                Quem realizou o pagamento?
-                                            </label>
-                                            <span className="text-[10px] text-emerald-400 font-medium">
-                                                {pagoPor === '50_50' ? '50% cada um' : pagoPor === 'alle' ? `100% ${partner1}` : pagoPor === 'kelly' ? `100% ${partner2}` : 'Personalizado'}
-                                            </span>
-                                        </div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                                            {[
-                                                { value: '50_50', label: '⚖️ 50/50' },
-                                                { value: 'alle', label: `💜 ${partner1}` },
-                                                { value: 'kelly', label: `💖 ${partner2}` },
-                                                { value: 'custom', label: '✏️ Rateio' },
-                                            ].map((opt) => (
-                                                <button
-                                                    key={opt.value}
-                                                    type="button"
-                                                    onClick={() => setPagoPor(opt.value)}
-                                                    className={`py-2 px-1 rounded-xl text-xs font-black border transition-all cursor-pointer truncate ${
-                                                        pagoPor === opt.value
-                                                            ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-500/30'
-                                                            : 'bg-[#0a0e1a] text-slate-400 border-white/10 hover:text-white hover:bg-white/5'
-                                                    }`}
-                                                >
-                                                    {opt.label}
-                                                </button>
-                                            ))}
-                                        </div>
-
-                                        {pagoPor === 'custom' && (
-                                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-emerald-500/20">
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-bold text-purple-300 uppercase">Pago por {partner1} (R$)</label>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        placeholder="0,00"
-                                                        value={customPagoAlle}
-                                                        onChange={(e) => {
-                                                            const v = e.target.value;
-                                                            setCustomPagoAlle(v);
-                                                            const num = parseFloat(v) || 0;
-                                                            const total = parseFloat(String(formData.amount).replace(',', '.')) || 0;
-                                                            if (total > 0 && num <= total) {
-                                                                setCustomPagoKelly((total - num).toFixed(2));
-                                                            }
-                                                        }}
-                                                        className="w-full bg-[#0a0e1a] border border-purple-500/30 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-purple-400"
-                                                    />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-bold text-rose-300 uppercase">Pago por {partner2} (R$)</label>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        placeholder="0,00"
-                                                        value={customPagoKelly}
-                                                        onChange={(e) => {
-                                                            const v = e.target.value;
-                                                            setCustomPagoKelly(v);
-                                                            const num = parseFloat(v) || 0;
-                                                            const total = parseFloat(String(formData.amount).replace(',', '.')) || 0;
-                                                            if (total > 0 && num <= total) {
-                                                                setCustomPagoAlle((total - num).toFixed(2));
-                                                            }
-                                                        }}
-                                                        className="w-full bg-[#0a0e1a] border border-rose-500/30 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-rose-400"
-                                                    />
+                                {/* Quando for Cartão de Crédito */}
+                                {(formData.type === 'credit' || formData.payment_method === 'credit') ? (
+                                    <div className="space-y-3">
+                                        {cartoes.length > 0 && (
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-bold text-purple-300 uppercase tracking-wider">Selecione o Cartão</label>
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                    {cartoes.map((c) => (
+                                                        <button
+                                                            key={c.id}
+                                                            type="button"
+                                                            onClick={() => handleCardChange(c.nome)}
+                                                            className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer truncate ${
+                                                                formData.cardName === c.nome
+                                                                    ? 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-500/30'
+                                                                    : 'bg-slate-900 text-slate-400 border-white/10 hover:text-white hover:bg-white/5'
+                                                            }`}
+                                                        >
+                                                            💳 {c.nome}
+                                                        </button>
+                                                    ))}
                                                 </div>
                                             </div>
                                         )}
-                                    </div>
-                                )}
 
-                                {/* Cartão de Crédito (quando type = credit ou meio de pagamento cartão) */}
-                                {(formData.type === 'credit' || formData.payment_method === 'credit') && cartoes.length > 0 && (
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-purple-300 uppercase tracking-wider">Selecione o Cartão</label>
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                            {cartoes.map((c) => (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Data da Compra</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.date}
+                                                    onChange={(e) => handleDateChange(e.target.value)}
+                                                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-indigo-500"
+                                                    required
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-bold text-purple-300 uppercase tracking-wider">Fatura de Cobrança</label>
+                                                <select
+                                                    value={currentFatura}
+                                                    onChange={(e) => setFormData(prev => ({ ...prev, faturaMes: e.target.value }))}
+                                                    className="w-full bg-slate-900 border border-purple-500/30 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-purple-200 focus:outline-none focus:border-purple-400 font-bold"
+                                                >
+                                                    {faturaOptions.map((opt) => (
+                                                        <option key={opt.key} value={opt.key}>
+                                                            {opt.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200 flex items-center gap-2">
+                                            <CreditCard className="h-4 w-4 text-purple-400 shrink-0" />
+                                            <span>
+                                                Esta compra entrará na fatura de <strong>{formatInvoiceMonth(currentFatura)}</strong> do cartão <strong>{selectedCard?.nome || 'selecionado'}</strong> (vencimento dia {selectedCard?.vencimento || '10'}).
+                                            </span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    /* Despesa ou Receita em conta corrente / dinheiro */
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Data</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.date}
+                                                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                                                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-indigo-500"
+                                                    required
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status do Pagamento</label>
                                                 <button
-                                                    key={c.id}
                                                     type="button"
-                                                    onClick={() => setFormData({ ...formData, cardName: c.nome })}
-                                                    className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer truncate ${
-                                                        formData.cardName === c.nome
-                                                            ? 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-500/30'
-                                                            : 'bg-slate-900 text-slate-400 border-white/10 hover:text-white'
+                                                    onClick={() => setFormData({ ...formData, pago: !formData.pago })}
+                                                    className={`w-full py-2.5 rounded-xl text-xs font-black border transition-all cursor-pointer ${
+                                                        formData.pago
+                                                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                                                            : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
                                                     }`}
                                                 >
-                                                    💳 {c.nome}
+                                                    {formData.pago ? '✅ JÁ PAGO' : '⏳ PENDENTE'}
                                                 </button>
-                                            ))}
+                                            </div>
                                         </div>
+
+                                        {/* Se marcado como JÁ PAGO: escolher quem pagou */}
+                                        {formData.pago && (
+                                            <div className="space-y-2 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 animate-fade-in">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                                                        Quem realizou o pagamento?
+                                                    </label>
+                                                    <span className="text-[10px] text-emerald-400 font-medium">
+                                                        {pagoPor === '50_50' ? '50% cada um' : pagoPor === 'alle' ? `100% ${partner1}` : pagoPor === 'kelly' ? `100% ${partner2}` : 'Personalizado'}
+                                                    </span>
+                                                </div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                                                    {[
+                                                        { value: '50_50', label: '⚖️ 50/50' },
+                                                        { value: 'alle', label: `💜 ${partner1}` },
+                                                        { value: 'kelly', label: `💖 ${partner2}` },
+                                                        { value: 'custom', label: '✏️ Rateio' },
+                                                    ].map((opt) => (
+                                                        <button
+                                                            key={opt.value}
+                                                            type="button"
+                                                            onClick={() => setPagoPor(opt.value)}
+                                                            className={`py-2 px-1 rounded-xl text-xs font-black border transition-all cursor-pointer truncate ${
+                                                                pagoPor === opt.value
+                                                                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-500/30'
+                                                                    : 'bg-[#0a0e1a] text-slate-400 border-white/10 hover:text-white hover:bg-white/5'
+                                                            }`}
+                                                        >
+                                                            {opt.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+
+                                                {pagoPor === 'custom' && (
+                                                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-emerald-500/20">
+                                                        <div className="space-y-1">
+                                                            <label className="text-[10px] font-bold text-purple-300 uppercase">Pago por {partner1} (R$)</label>
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                placeholder="0,00"
+                                                                value={customPagoAlle}
+                                                                onChange={(e) => {
+                                                                    const v = e.target.value;
+                                                                    setCustomPagoAlle(v);
+                                                                    const num = parseFloat(v) || 0;
+                                                                    const total = parseFloat(String(formData.amount).replace(',', '.')) || 0;
+                                                                    if (total > 0 && num <= total) {
+                                                                        setCustomPagoKelly((total - num).toFixed(2));
+                                                                    }
+                                                                }}
+                                                                className="w-full bg-[#0a0e1a] border border-purple-500/30 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-purple-400"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-[10px] font-bold text-rose-300 uppercase">Pago por {partner2} (R$)</label>
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                placeholder="0,00"
+                                                                value={customPagoKelly}
+                                                                onChange={(e) => {
+                                                                    const v = e.target.value;
+                                                                    setCustomPagoKelly(v);
+                                                                    const num = parseFloat(v) || 0;
+                                                                    const total = parseFloat(String(formData.amount).replace(',', '.')) || 0;
+                                                                    if (total > 0 && num <= total) {
+                                                                        setCustomPagoAlle((total - num).toFixed(2));
+                                                                    }
+                                                                }}
+                                                                className="w-full bg-[#0a0e1a] border border-rose-500/30 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-rose-400"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 

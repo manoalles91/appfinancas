@@ -258,13 +258,36 @@ export default function Dashboard({
         const vencidas = [];
         const proximas = [];
 
+        const registeredCardNames = new Set((cartoes || []).map((c) => c && c.nome).filter(Boolean));
+        const isCreditTx = (t) => t && (t.type === 'credit' || t.payment_method === 'credit' || (t.card_name && registeredCardNames.has(t.card_name)));
+
+        // Despesas avulsas (boletos, contas etc., excluindo compras avulsas de cartão)
         allTxs.forEach((t) => {
-            if (!t || t.pago || (t.type !== 'expense' && t.type !== 'credit') || !t.date) return;
+            if (!t || t.pago || t.type !== 'expense' || isCreditTx(t) || !t.date) return;
             const d = new Date(t.date.slice(0, 10) + 'T00:00:00');
             if (isNaN(d.getTime())) return;
             const diff = Math.floor((d - today) / 86400000);
             if (diff < 0) vencidas.push({ ...t, _days: Math.abs(diff) });
             else if (diff <= 7) proximas.push({ ...t, _days: diff });
+        });
+
+        // Faturas de cartão em aberto no mês atual
+        const curY = today.getFullYear();
+        const curM = today.getMonth();
+        (cardsSummary || []).forEach((c) => {
+            if (!c || c.isPaga || Number(c.faturaAtual || 0) <= 0) return;
+            const vDia = Number(c.vencimento || 10);
+            const dVenc = new Date(curY, curM, vDia, 0, 0, 0);
+            const diff = Math.floor((dVenc - today) / 86400000);
+            const cardItem = {
+                id: `card-due-${c.nome}-${curY}-${curM}`,
+                description: `Fatura ${c.nome}`,
+                amount: c.faturaAtual,
+                date: dVenc.toISOString(),
+                isCardInvoice: true,
+            };
+            if (diff < 0) vencidas.push({ ...cardItem, _days: Math.abs(diff) });
+            else if (diff <= 7) proximas.push({ ...cardItem, _days: diff });
         });
 
         vencidas.sort((a, b) => b._days - a._days);
@@ -280,7 +303,7 @@ export default function Dashboard({
             totalProximas,
             totalGeral: totalVencidas + totalProximas,
         };
-    }, [allTxs]);
+    }, [allTxs, cartoes, cardsSummary]);
 
     const coupleSummary = useMemo(() => {
         const isExpense = (t) => t && (t.type === 'expense' || t.type === 'credit');
